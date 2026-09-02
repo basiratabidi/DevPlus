@@ -1,0 +1,39 @@
+{
+  "name": "DevPulse - Reminders Sweep",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "minutes", "minutesInterval": 5 }
+          ]
+        }
+      },
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://app:3000/cron/reminders",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-cron-secret", "value": "={{$env.CRON_SECRET}}" }
+          ]
+        }
+      },
+      "name": "Trigger Reminders Sweep",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [[{ "node": "Trigger Reminders Sweep", "type": "main", "index": 0 }]]
+    }
+  }
+}

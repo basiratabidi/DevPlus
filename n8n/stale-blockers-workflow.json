@@ -1,0 +1,39 @@
+{
+  "name": "DevPulse - Stale Blockers",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "hours", "hoursInterval": 6 }
+          ]
+        }
+      },
+      "name": "Every 6 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://app:3000/cron/stale-blockers",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-cron-secret", "value": "={{$env.CRON_SECRET}}" }
+          ]
+        }
+      },
+      "name": "Trigger Stale Blocker Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    }
+  ],
+  "connections": {
+    "Every 6 Hours": {
+      "main": [[{ "node": "Trigger Stale Blocker Check", "type": "main", "index": 0 }]]
+    }
+  }
+}
