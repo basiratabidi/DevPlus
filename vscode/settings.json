@@ -1,0 +1,3 @@
+{
+  "python.defaultInterpreterPath": "./ai-services/venv/bin/python"
+}
