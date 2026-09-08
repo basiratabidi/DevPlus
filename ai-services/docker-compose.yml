@@ -1,0 +1,10 @@
+version: "3.8"
+
+services:
+  ai-services:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8001:8001"
