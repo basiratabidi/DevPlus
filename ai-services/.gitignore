@@ -1,2 +1,5 @@
 .env
 /vevn
+__pycache__/
+*.pyc
+models/

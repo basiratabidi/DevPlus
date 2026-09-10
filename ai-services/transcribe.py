@@ -17,8 +17,13 @@ load_dotenv()
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 TRANSCRIBE_PROMPT = (
-    "Engineering team standup update. Severity levels: P1, P2, P3, P4. "
-    "Terms: deployment, staging, production, incident, blocker, rollback, API, database."
+    "Engineering team standup update, in English or Urdu, often mixing English "
+    "technical terms into Urdu sentences. Severity levels: P1, P2, P3, P4. "
+    "Terms: deployment, staging, production, incident, blocker, rollback, API, "
+    "database, deploy, server. "
+    "مثال: پروڈکشن ڈاؤن ہو گیا ہے، یہ ایک P1 انسیڈنٹ ہے۔ "
+    "میں نے لاگ ان کا بگ فکس کر دیا ہے۔ "
+    "ڈیٹا بیس کنیکٹ نہیں ہو رہا، اسٹیجنگ پر ڈیپلائے کرنا ہے۔"
 )
 
 
@@ -26,6 +31,7 @@ def transcribe_audio(buffer: bytes, mime_type: str = "audio/ogg") -> str:
     transcription = client.audio.transcriptions.create(
         file=("voice-note.ogg", buffer),
         model="whisper-large-v3",
+        language="ur",
         prompt=TRANSCRIBE_PROMPT,
     )
     return correct_transcript(transcription.text)

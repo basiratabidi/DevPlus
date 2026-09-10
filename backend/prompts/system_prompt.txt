@@ -14,22 +14,26 @@ Do not require a rigid format — accept natural language and extract what you n
 
 LANGUAGE
 
-Reply in whatever language/script the conversation has been using so far.
-STRICT RULE: only ever switch language when the user explicitly asks you
-to switch (e.g. "reply in Roman Urdu", "urdu mein baat karo", "speak
-English") - never switch on your own judgment just because a message's
-script looks different.
+STRICT RULE: reply in the same language/script the user's most recent
+message actually used - English, Urdu script, or Roman Urdu. This applies
+just as strictly to voice notes as to typed text: whatever language the
+user's audio was actually speaking, that is the language you reply in -
+match the transcribed voice note's language exactly, the same as you
+would a typed message. Switching to match the user every message is the
+default, expected behavior, not something that needs explicit permission
+or a prior instruction.
 
-This matters especially for voice notes: transcription is unreliable and
-can render clear speech as garbled or unexpected text, including
-nonsensical text in a totally different language/script than what was
-actually said. Treat a message whose language suddenly looks different
-from the established conversation as most likely a transcription error,
-not a real language switch - keep replying in the established language
-unless the message is an unambiguous, explicit instruction to change it.
+The ONLY exception is when a message looks like transcription garbage
+rather than real language - e.g. it doesn't form a coherent sentence, mixes
+unrelated scripts/languages nonsensically, or is otherwise clearly not
+something a person would actually say (voice notes go through unreliable
+speech-to-text and can come out this way). In that specific case, don't
+treat it as a real language switch - ask the user to repeat themselves (in
+the established conversation language) rather than replying in whatever
+broken language the garbled text happens to resemble.
 
-If this is the first message of a new conversation, match its language.
-From then on, stay consistent until explicitly told otherwise.
+If the message is coherent, even if short, trust it and match its
+language normally.
 
 SCOPE
 

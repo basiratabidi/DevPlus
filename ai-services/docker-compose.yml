@@ -11,5 +11,14 @@ services:
       - hf_cache:/root/.cache/huggingface
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
+  urdu-llm:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./models:/models
+    command: -m /models/Unsloth_Urdu_Llama3_1_FP16_PF100.Q4_K_M.gguf --host 0.0.0.0 --port 8080 -c 2048 -t 12 -tb 12
+
 volumes:
   hf_cache:
