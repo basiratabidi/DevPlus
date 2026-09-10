@@ -17,10 +17,14 @@ dotenv.config();
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SYSTEM_PROMPT = readFileSync(
-  path.join(__dirname, '../../prompts/system_prompt.txt'),
-  'utf-8'
-);
+const SYSTEM_PROMPT_PATH = path.join(__dirname, '../../prompts/system_prompt.txt');
+
+// Read fresh on every call rather than once at module load - a plain text
+// file isn't part of the module graph, so `node --watch` won't reload it
+// on edit otherwise, silently leaving a stale prompt in memory.
+function getSystemPrompt() {
+  return readFileSync(SYSTEM_PROMPT_PATH, 'utf-8');
+}
 
 const toolDefinitions = [
   {
@@ -257,10 +261,17 @@ function describeToolResult(name, args, result) {
 // single user message may trigger before we force a plain-text reply.
 const MAX_TOOL_ROUNDS = 4;
 
+// Per-user: true when the PREVIOUS turn asked a duplicate-confirmation
+// question (see DUP_CHECK_GATES below) and is now waiting on the user's
+// yes/no answer. In-process only, matches the existing conversation
+// memory pattern - resets on restart or server restart.
+const pendingDupConfirmation = new Map();
+
 export async function runAgent({ userId, message }) {
   // "restart" command clears conversation memory and short-circuits the LLM call
   if (message.trim().toLowerCase() === 'restart') {
     clearHistory(userId);
+    pendingDupConfirmation.delete(userId);
     return 'Conversation restarted. What would you like to log?';
   }
 
@@ -270,7 +281,7 @@ export async function runAgent({ userId, message }) {
   };
 
   const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: getSystemPrompt() },
     currentDateMessage,
     ...getConvoHistory(userId),
     { role: 'user', content: message },
@@ -282,17 +293,42 @@ export async function runAgent({ userId, message }) {
   // if the LLM's own confirmation wording fails to generate (see below).
   const confirmations = [];
 
+  // Once a duplicate-check runs (listOpenIncidents/listOpenBlockers), the
+  // corresponding update-timing tool is removed from the tools offered for
+  // the rest of THIS turn - UNLESS this turn is itself the user's answer
+  // to a question asked last turn (awaitingConfirmation), in which case a
+  // re-check + update in the same turn is exactly the correct behavior.
+  // Without the gate at all, the model can silently chain
+  // check -> update -> (only then) ask its confirmation question, all in
+  // one turn - meaning the write already happened before the user ever
+  // answered, making the question decorative. Confirmed necessary by
+  // reproducing exactly that sequence live (incident's reported_at
+  // changed on the asking turn, not the confirmation turn) - and the
+  // naive same-turn-only version of this gate then wrongly blocked the
+  // legitimate update on the real confirmation turn too, since that turn
+  // also re-calls listOpen* to look the id back up.
+  const DUP_CHECK_GATES = {
+    listOpenIncidents: 'updateIncidentTiming',
+    listOpenBlockers: 'updateBlockerTiming',
+  };
+  const awaitingConfirmation = pendingDupConfirmation.get(userId) === true;
+  const blockedTools = new Set();
+  let dupCheckRanThisTurn = false;
+
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     // On the final round, don't offer tools at all, forcing a plain-text
     // reply - guarantees the loop terminates instead of chaining forever.
     const toolsAvailable = round < MAX_TOOL_ROUNDS;
+    const availableToolDefs = (awaitingConfirmation || blockedTools.size === 0)
+      ? toolDefinitions
+      : toolDefinitions.filter((t) => !blockedTools.has(t.function.name));
 
     let completion;
     try {
       completion = await groq.chat.completions.create({
         model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
         messages,
-        ...(toolsAvailable ? { tools: toolDefinitions, tool_choice: 'auto' } : {}),
+        ...(toolsAvailable ? { tools: availableToolDefs, tool_choice: 'auto' } : {}),
       });
     } catch (err) {
       // Covers the case where the model tries to call a tool anyway on the
@@ -328,6 +364,10 @@ export async function runAgent({ userId, message }) {
           result = await fn(userId, args);
           const description = describeToolResult(resolvedName, args, result);
           if (description) confirmations.push(description);
+          if (DUP_CHECK_GATES[resolvedName]) {
+            dupCheckRanThisTurn = true;
+            blockedTools.add(DUP_CHECK_GATES[resolvedName]);
+          }
         } catch (err) {
           console.error(`Tool ${resolvedName} failed:`, err);
           result = { error: err.message };
@@ -345,6 +385,20 @@ export async function runAgent({ userId, message }) {
     // Ran out of rounds without a plain-text reply - still confirm
     // whatever was actually written rather than saying nothing useful.
     reply = confirmations.length > 0 ? confirmations.join(' ') : 'Done.';
+  }
+
+  // Resolve the confirmation state machine for next turn: if this turn was
+  // itself the answer to a pending question, that cycle is over either way
+  // (whether the user said yes or no). Otherwise, if a dup-check ran and
+  // was gated (blockedTools not empty means the update tool was withheld),
+  // the only way this turn could still end in plain text is by asking a
+  // question - so expect the next turn to be the answer.
+  if (awaitingConfirmation) {
+    pendingDupConfirmation.delete(userId);
+  } else if (dupCheckRanThisTurn) {
+    pendingDupConfirmation.set(userId, true);
+  } else {
+    pendingDupConfirmation.delete(userId);
   }
 
   appendMessage(userId, 'user', message);

@@ -6,11 +6,13 @@ const GRAPH_API_VERSION = 'v25.0';
 export async function sendWhatsAppAudio({ to, buffer }) {
   const uploadUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/media`;
 
+  // The AI service converts its TTS output from WAV to MP3 before
+  // returning it (WhatsApp's Cloud API rejects audio/wav), so the bytes
+  // here are always real MP3 - label it accordingly.
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
-  form.append('file', new Blob([buffer], { type: 'audio/wav' }), 'reply.wav');
-  //form.append('file', new Blob([buffer], { type: 'audio/mpeg' }), 'reply.mp3');
- 
+  form.append('file', new Blob([buffer], { type: 'audio/mpeg' }), 'reply.mp3');
+
   const uploadResponse = await fetch(uploadUrl, {
     method: 'POST',
     headers: {
