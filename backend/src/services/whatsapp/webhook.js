@@ -5,15 +5,22 @@ import { runAgent } from '../../agent/graph.js';
 import { runOnboarding } from '../../agent/onboarding.js';
 import { sendWhatsAppMessage } from './sendMessage.js';
 import { downloadMedia } from './mediaDownload.js';
-// MIGRATION NOTE: transcribeAudio/textToSpeech now call the Python AI
-// service (see src/services/aiService.js) instead of the local Node
-// implementations in agent/transcribe.js and agent/textToSpeech.js.
-// Those files are left in place, untouched, as a reference/fallback
-// until the Python service is built and verified — do not delete them yet.
 import { transcribeViaAI as transcribeAudio, speakViaAI as textToSpeech } from '../aiservices/aiService.js';
 import { sendWhatsAppAudio } from './sendAudio.js';
 
 export const webhookRouter = express.Router();
+
+function stripMarkdownForSpeech(text) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/_(.*?)_/g, '$1')
+    .replace(/`(.*?)`/g, '$1')
+    .replace(/#{1,6}\s?/g, '')
+    .replace(/\n+/g, '. ')
+    .trim();
+}
 
 webhookRouter.get('/webhook/whatsapp', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -44,6 +51,20 @@ function isValidSignature(req) {
   }
 }
 
+const processedMessageIds = new Set();
+const MAX_TRACKED_IDS = 500;
+
+function isDuplicateMessage(messageId) {
+  if (!messageId) return false;
+  if (processedMessageIds.has(messageId)) return true;
+  processedMessageIds.add(messageId);
+  if (processedMessageIds.size > MAX_TRACKED_IDS) {
+    const oldest = processedMessageIds.values().next().value;
+    processedMessageIds.delete(oldest);
+  }
+  return false;
+}
+
 webhookRouter.post('/webhook/whatsapp', async (req, res) => {
   try {
     if (!isValidSignature(req)) {
@@ -56,6 +77,11 @@ webhookRouter.post('/webhook/whatsapp', async (req, res) => {
     const message = change?.messages?.[0];
 
     if (!message) {
+      return res.sendStatus(200);
+    }
+
+    if (isDuplicateMessage(message.id)) {
+      console.log('Ignoring duplicate webhook delivery for message:', message.id);
       return res.sendStatus(200);
     }
 
@@ -95,11 +121,11 @@ webhookRouter.post('/webhook/whatsapp', async (req, res) => {
     }
 
     const userResult = await pool.query(
-        `SELECT u.id, p.onboarding_complete
-        FROM users u
-        LEFT JOIN profiles p ON p.user_id = u.id
-        WHERE u.whatsapp_number = $1`,
-        [from]
+      `SELECT u.id, p.onboarding_complete
+       FROM users u
+       LEFT JOIN profiles p ON p.user_id = u.id
+       WHERE u.whatsapp_number = $1`,
+      [from]
     );
 
     const existingUserId = userResult.rowCount > 0 ? userResult.rows[0].id : null;
@@ -118,10 +144,9 @@ webhookRouter.post('/webhook/whatsapp', async (req, res) => {
     const userId = existingUserId;
     const reply = await runAgent({ userId, message: messageText });
 
-    // Reply in the same modality the user used: voice note in -> voice note out
     if (wasVoiceNote) {
       try {
-        const audioBuffer = await textToSpeech(reply);
+        const audioBuffer = await textToSpeech(stripMarkdownForSpeech(reply));
         await sendWhatsAppAudio({ to: from, buffer: audioBuffer });
       } catch (err) {
         console.error('Voice reply failed, falling back to text:', err);

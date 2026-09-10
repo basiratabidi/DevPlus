@@ -9,7 +9,9 @@ import { sendWhatsAppDocument } from '../services/whatsapp/sendDocument.js';
  * returning a confirmation - the agent should not claim success unless
  * this actually completes without throwing.
  */
-export async function sendHistoryPdf({ userId, days = 7 }) {
+export async function sendHistoryPdf({ userId, days }) {
+  const effectiveDays = days ?? 7;
+
   const userResult = await pool.query(
     `SELECT whatsapp_number, name FROM users WHERE id = $1`,
     [userId]
@@ -19,8 +21,8 @@ export async function sendHistoryPdf({ userId, days = 7 }) {
   }
   const { whatsapp_number: phone, name } = userResult.rows[0];
 
-  const history = await getHistory({ userId, days });
-  const pdfBuffer = await buildHistoryPdf({ userName: name, days, history });
+  const history = await getHistory({ userId, days: effectiveDays });
+  const pdfBuffer = await buildHistoryPdf({ userName: name, days: effectiveDays, history });
 
   const filename = `devpulse-report-${new Date().toISOString().slice(0, 10)}.pdf`;
 
@@ -28,8 +30,8 @@ export async function sendHistoryPdf({ userId, days = 7 }) {
     to: phone,
     buffer: pdfBuffer,
     filename,
-    caption: `Your DevPulse activity report - last ${days} days`,
+    caption: `Your DevPulse activity report - last ${effectiveDays} days`,
   });
 
-  return { sent: true, filename, days };
+  return { sent: true, filename, days: effectiveDays };
 }

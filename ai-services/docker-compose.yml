@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   ai-services:
     build: .
@@ -8,3 +6,10 @@ services:
       - .env
     ports:
       - "8001:8001"
+    volumes:
+      - ./:/app
+      - hf_cache:/root/.cache/huggingface
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+
+volumes:
+  hf_cache:

@@ -4,11 +4,11 @@ dotenv.config();
 /**
  * Sends a WhatsApp text message via the official Meta Cloud API.
  * This is the standard, documented endpoint/payload shape:
- * POST https://graph.facebook.com/v21.0/{phone-number-id}/messages
+ * POST https://graph.facebook.com/v25.0/{phone-number-id}/messages
  *
  * NOTE: I'm reasonably confident in this shape since it's Meta's stable
  * documented API, but Meta does bump the graph API version periodically
- * (v21.0 here) - check developers.facebook.com/docs/whatsapp for the
+ * (v25.0 here) - check developers.facebook.com/docs/whatsapp for the
  * current version before deploying, and update GRAPH_API_VERSION if needed.
  */
 const GRAPH_API_VERSION = 'v25.0';

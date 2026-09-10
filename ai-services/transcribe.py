@@ -26,8 +26,6 @@ def transcribe_audio(buffer: bytes, mime_type: str = "audio/ogg") -> str:
     transcription = client.audio.transcriptions.create(
         file=("voice-note.ogg", buffer),
         model="whisper-large-v3",
-        language="ur",
         prompt=TRANSCRIBE_PROMPT,
     )
-
     return correct_transcript(transcription.text)
