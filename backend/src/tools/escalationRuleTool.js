@@ -46,7 +46,8 @@ export async function evaluateEscalation({ userId, sourceType, sourceId, ruleTri
 export async function checkStaleBlockers({ hoursThreshold = 48 } = {}) {
   const result = await query(
     `SELECT id, user_id FROM blockers
-     WHERE status = 'open' AND reported_at < now() - ($1 || ' hours')::interval`,
+     WHERE status = 'open' AND escalated_at IS NULL
+       AND reported_at < now() - ($1 || ' hours')::interval`,
     [hoursThreshold]
   );
 
@@ -58,6 +59,7 @@ export async function checkStaleBlockers({ hoursThreshold = 48 } = {}) {
       sourceId: blocker.id,
       ruleTriggered: `blocker_open_${hoursThreshold}h`,
     });
+    await query(`UPDATE blockers SET escalated_at = now() WHERE id = $1`, [blocker.id]);
     escalated.push({ blockerId: blocker.id, ...outcome });
   }
   return escalated;

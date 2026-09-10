@@ -32,6 +32,22 @@ export async function reportIncident({ userId, title, description, severity, aff
   return incident;
 }
 
+/**
+ * Bumps an existing incident's reported_at to now, for the case where a
+ * user re-reports the same still-open incident rather than a new one -
+ * avoids creating a duplicate row for what's really a timing update.
+ */
+export async function updateIncidentTiming({ incidentId }) {
+  const result = await query(
+    `UPDATE incidents SET reported_at = now() WHERE id = $1 RETURNING id, reported_at`,
+    [incidentId]
+  );
+  if (result.rowCount === 0) {
+    throw new Error(`No incident found for incidentId ${incidentId}`);
+  }
+  return result.rows[0];
+}
+
 export async function resolveIncident({ incidentId }) {
   const result = await query(
     `UPDATE incidents SET status = 'resolved', resolved_at = now()

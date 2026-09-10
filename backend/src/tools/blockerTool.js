@@ -18,6 +18,25 @@ export async function reportBlocker({ userId, description, severity }) {
 }
 
 
+/**
+ * Bumps an existing blocker's reported_at to now, for the case where a
+ * user re-reports the same still-open blocker rather than a new one -
+ * avoids creating a duplicate row for what's really a timing update.
+ */
+export async function updateBlockerTiming({ blockerId }) {
+  // Reset escalated_at too - the blocker is still ongoing, so it should be
+  // eligible to re-escalate after another full threshold period, not stay
+  // permanently suppressed by the earlier escalation.
+  const result = await query(
+    `UPDATE blockers SET reported_at = now(), escalated_at = NULL WHERE id = $1 RETURNING id, reported_at`,
+    [blockerId]
+  );
+  if (result.rowCount === 0) {
+    throw new Error(`No blocker found for blockerId ${blockerId}`);
+  }
+  return result.rows[0];
+}
+
 export async function resolveBlocker({ blockerId }) {
   const result = await query(
     `UPDATE blockers SET status = 'resolved', resolved_at = now()

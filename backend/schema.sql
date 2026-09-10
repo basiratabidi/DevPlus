@@ -101,6 +101,12 @@ CREATE INDEX IF NOT EXISTS idx_blockers_status ON blockers(status);
 CREATE INDEX IF NOT EXISTS idx_reminders_pending ON reminders(sent, scheduled_at);
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN DEFAULT FALSE;
 
+-- De-dup guards: without these, checkStaleBlockers/runMissedCheckinSweep
+-- re-escalate and re-notify on every cron sweep for as long as the
+-- underlying condition stays true (confirmed by direct testing).
+ALTER TABLE blockers ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_missed_checkin_alert DATE;
+
 
 -- ============================================================
 -- FULL CLEAN SEED — wipes existing test junk, rebuilds cleanly

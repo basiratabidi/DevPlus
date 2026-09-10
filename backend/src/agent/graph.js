@@ -5,8 +5,9 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 
 import { logTask } from '../tools/taskLogTool.js';
-import { reportIncident } from '../tools/incidentTool.js';
-import { reportBlocker, listOpenBlockers } from '../tools/blockerTool.js';
+import { reportIncident, listOpenIncidents, updateIncidentTiming } from '../tools/incidentTool.js';
+import { reportBlocker, listOpenBlockers, updateBlockerTiming } from '../tools/blockerTool.js';
+import { sendBlockersPdf } from '../tools/blockerPdfTool.js';
 import { logDeployment, listUpcomingDeployments } from '../tools/deploymentTool.js';
 import { getHistory as getDbHistory } from '../tools/historyTool.js';
 import { sendHistoryPdf } from '../tools/historyPdfTool.js';
@@ -57,6 +58,28 @@ const toolDefinitions = [
   {
     type: 'function',
     function: {
+      name: 'listOpenIncidents',
+      description: "List the user's currently open (non-resolved) incidents - use this to check for a similar already-open incident before calling reportIncident, so the same real-world incident doesn't get logged twice",
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'updateIncidentTiming',
+      description: "Use instead of reportIncident when the user confirms they're re-reporting the SAME still-open incident (not a new one) - just bumps its reported time rather than creating a duplicate",
+      parameters: {
+        type: 'object',
+        properties: {
+          incidentId: { type: 'number' },
+        },
+        required: ['incidentId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'reportBlocker',
       description: 'Report something blocking the user from making progress',
       parameters: {
@@ -74,6 +97,28 @@ const toolDefinitions = [
     function: {
       name: 'listOpenBlockers',
       description: "List the user's currently open blockers",
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'updateBlockerTiming',
+      description: "Use instead of reportBlocker when the user confirms they're re-reporting the SAME still-open blocker (not a new one) - just bumps its reported time rather than creating a duplicate",
+      parameters: {
+        type: 'object',
+        properties: {
+          blockerId: { type: 'number' },
+        },
+        required: ['blockerId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'sendBlockersPdf',
+      description: "Generate and send a styled PDF of the user's currently open blockers as a WhatsApp document",
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -146,8 +191,12 @@ const toolDefinitions = [
 const TOOL_IMPL = {
   logTask: (userId, args) => logTask({ userId, ...args }),
   reportIncident: (userId, args) => reportIncident({ userId, ...args }),
+  listOpenIncidents: (userId) => listOpenIncidents({ userId }),
+  updateIncidentTiming: (userId, args) => updateIncidentTiming({ incidentId: args.incidentId }),
   reportBlocker: (userId, args) => reportBlocker({ userId, ...args }),
   listOpenBlockers: (userId) => listOpenBlockers({ userId }),
+  updateBlockerTiming: (userId, args) => updateBlockerTiming({ blockerId: args.blockerId }),
+  sendBlockersPdf: (userId) => sendBlockersPdf({ userId }),
   logDeployment: (userId, args) => logDeployment({ userId, ...args }),
   listUpcomingDeployments: (userId) => listUpcomingDeployments({ userId }),
   getHistory: (userId, args) => getDbHistory({ userId, ...args }),
@@ -159,14 +208,54 @@ const TOOL_ALIASES = {
   logBlocker: 'reportBlocker',
   logIncident: 'reportIncident',
   getBlockers: 'listOpenBlockers',
+  getIncidents: 'listOpenIncidents',
+  getOpenIncidents: 'listOpenIncidents',
+  updateIncident: 'updateIncidentTiming',
+  updateBlocker: 'updateBlockerTiming',
   getDeployments: 'listUpcomingDeployments',
   getHistoryReport: 'sendHistoryPdf',
   sendReport: 'sendHistoryPdf',
+  sendBlockerPdf: 'sendBlockersPdf',
+  getBlockersPdf: 'sendBlockersPdf',
 };
 
 function resolveToolName(name) {
   return TOOL_IMPL[name] ? name : TOOL_ALIASES[name];
 }
+
+// Deterministic, fact-based description of what a write tool actually did -
+// built from the real tool result, not the LLM's wording. Used as a
+// guaranteed fallback confirmation so a database write is never left
+// unconfirmed to the user just because reply-generation failed. Returns
+// null for read-only tools (nothing was logged) or a failed write.
+function describeToolResult(name, args, result) {
+  if (!result || result.error) return null;
+  switch (name) {
+    case 'logTask':
+      return `Logged task update: "${args.summary}"`;
+    case 'reportIncident':
+      return `Logged ${args.severity} incident #${result.id}: "${args.title}"`;
+    case 'updateIncidentTiming':
+      return `Updated timing on existing incident #${result.id} (not logged as new)`;
+    case 'reportBlocker':
+      return `Logged blocker #${result.id}: "${args.description}"`;
+    case 'updateBlockerTiming':
+      return `Updated timing on existing blocker #${result.id} (not logged as new)`;
+    case 'logDeployment':
+      return `Logged ${args.environment} deployment #${result.id} for ${args.serviceName}`;
+    case 'sendHistoryPdf':
+      return result.sent ? `Sent your activity report (last ${result.days} days) as a PDF` : null;
+    case 'sendBlockersPdf':
+      return result.sent ? `Sent your open blockers (${result.count}) as a PDF` : null;
+    default:
+      return null;
+  }
+}
+
+// Some requests need more than one tool call in sequence (e.g. look up a
+// blocker's id, then update it) - this bounds how many such rounds a
+// single user message may trigger before we force a plain-text reply.
+const MAX_TOOL_ROUNDS = 4;
 
 export async function runAgent({ userId, message }) {
   // "restart" command clears conversation memory and short-circuits the LLM call
@@ -175,66 +264,89 @@ export async function runAgent({ userId, message }) {
     return 'Conversation restarted. What would you like to log?';
   }
 
-  const priorMessages = getConvoHistory(userId);
   const currentDateMessage = {
     role: 'system',
     content: `Current date/time: ${new Date().toISOString()}`,
   };
 
-  const completion = await groq.chat.completions.create({
-    model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      currentDateMessage,
-      ...priorMessages,
-      { role: 'user', content: message },
-    ],
-    tools: toolDefinitions,
-    tool_choice: 'auto',
-  });
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    currentDateMessage,
+    ...getConvoHistory(userId),
+    { role: 'user', content: message },
+  ];
 
-  const responseMessage = completion.choices[0].message;
-  const toolCalls = responseMessage.tool_calls;
+  let reply;
+  // Deterministic, real-result-based description of every successful write
+  // this turn made, collected across every round - the guaranteed fallback
+  // if the LLM's own confirmation wording fails to generate (see below).
+  const confirmations = [];
 
-  if (!toolCalls || toolCalls.length === 0) {
-    const reply = responseMessage.content ?? "Sorry, I didn't catch that.";
-    appendMessage(userId, 'user', message);
-    appendMessage(userId, 'assistant', reply);
-    return reply;
-  }
+  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    // On the final round, don't offer tools at all, forcing a plain-text
+    // reply - guarantees the loop terminates instead of chaining forever.
+    const toolsAvailable = round < MAX_TOOL_ROUNDS;
 
-  const toolResults = [];
-  for (const call of toolCalls) {
-    const resolvedName = resolveToolName(call.function.name);
-    const fn = TOOL_IMPL[resolvedName];
-    if (!fn) {
-      console.warn(`Unknown tool called: ${call.function.name}`);
-      toolResults.push({ name: call.function.name, result: { error: 'Tool not found' } });
-      continue;
+    let completion;
+    try {
+      completion = await groq.chat.completions.create({
+        model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+        messages,
+        ...(toolsAvailable ? { tools: toolDefinitions, tool_choice: 'auto' } : {}),
+      });
+    } catch (err) {
+      // Covers the case where the model tries to call a tool anyway on the
+      // final, tools-less round - Groq hard-rejects that regardless of
+      // tool_choice. Don't leave the user with a silently dropped message
+      // (previously this surfaced to webhook.js as a bare 500, no reply
+      // sent at all) - fall back to a plain confirmation instead.
+      console.error('Agent completion failed:', err);
+      reply = confirmations.length > 0 ? confirmations.join(' ') : 'Done.';
+      break;
     }
-    const args = JSON.parse(call.function.arguments);
-    const result = await fn(userId, args);
-    toolResults.push({ name: resolvedName, result });
-  }
 
+    const responseMessage = completion.choices[0].message;
+    const toolCalls = responseMessage.tool_calls;
 
-  const followUp = await groq.chat.completions.create({
-    model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      currentDateMessage,
-      ...priorMessages,
-      { role: 'user', content: message },
-      responseMessage,
-      ...toolCalls.map((call, i) => ({
+    if (!toolCalls || toolCalls.length === 0) {
+      reply = responseMessage.content ?? "Sorry, I didn't catch that.";
+      break;
+    }
+
+    messages.push(responseMessage);
+
+    for (const call of toolCalls) {
+      const resolvedName = resolveToolName(call.function.name);
+      const fn = TOOL_IMPL[resolvedName];
+      let result;
+      if (!fn) {
+        console.warn(`Unknown tool called: ${call.function.name}`);
+        result = { error: 'Tool not found' };
+      } else {
+        try {
+          const args = JSON.parse(call.function.arguments);
+          result = await fn(userId, args);
+          const description = describeToolResult(resolvedName, args, result);
+          if (description) confirmations.push(description);
+        } catch (err) {
+          console.error(`Tool ${resolvedName} failed:`, err);
+          result = { error: err.message };
+        }
+      }
+      messages.push({
         role: 'tool',
         tool_call_id: call.id,
-        content: JSON.stringify(toolResults[i]?.result ?? {}),
-      })),
-    ],
-  });
+        content: JSON.stringify(result ?? {}),
+      });
+    }
+  }
 
-  const reply = followUp.choices[0].message.content;
+  if (reply === undefined) {
+    // Ran out of rounds without a plain-text reply - still confirm
+    // whatever was actually written rather than saying nothing useful.
+    reply = confirmations.length > 0 ? confirmations.join(' ') : 'Done.';
+  }
+
   appendMessage(userId, 'user', message);
   appendMessage(userId, 'assistant', reply);
   return reply;

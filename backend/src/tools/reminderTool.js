@@ -43,10 +43,15 @@ export async function findMissedCheckins() {
      FROM profiles p
      JOIN users u ON u.id = p.user_id
      WHERE p.standup_time < CURRENT_TIME
+       AND (p.last_missed_checkin_alert IS NULL OR p.last_missed_checkin_alert < CURRENT_DATE)
        AND NOT EXISTS (
          SELECT 1 FROM task_logs t
          WHERE t.user_id = p.user_id AND t.logged_at::date = CURRENT_DATE
        )`
   );
   return result.rows;
+}
+
+export async function markMissedCheckinAlerted({ userId }) {
+  await query(`UPDATE profiles SET last_missed_checkin_alert = CURRENT_DATE WHERE user_id = $1`, [userId]);
 }

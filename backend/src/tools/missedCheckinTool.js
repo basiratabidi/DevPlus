@@ -1,4 +1,4 @@
-import { findMissedCheckins } from './reminderTool.js';
+import { findMissedCheckins, markMissedCheckinAlerted } from './reminderTool.js';
 import { notifyUser } from './notificationTool.js';
 import { evaluateEscalation } from './escalationRuleTool.js';
 
@@ -25,6 +25,8 @@ export async function runMissedCheckinSweep() {
       sourceId: null,
       ruleTriggered: 'missed_standup',
     });
+
+    await markMissedCheckinAlerted({ userId: person.user_id });
 
     results.push({ userId: person.user_id, ...escalation });
   }
