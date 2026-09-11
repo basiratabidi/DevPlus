@@ -1,5 +1,5 @@
 # Software Design Specification (SDS)
-## DevPulse — Agentic WhatsApp Assistant for Engineering Team Operations
+## DevPulse: Agentic WhatsApp Assistant for Engineering Team Operations
 
 ---
 
@@ -51,7 +51,7 @@ graph TB
 
 ### 2.1 Webhook layer (`webhook.js`)
 Responsibilities: HMAC-SHA256 signature verification on inbound
-requests, message deduplication (Meta redelivers on timeout — tracked
+requests, message deduplication (Meta redelivers on timeout, tracked
 by message ID), routing text vs. voice messages, and orchestrating the
 reply (text or synthesized voice) back to the user.
 
@@ -73,7 +73,7 @@ results fed back to the model) or produces a final natural-language
 reply. Rounds are capped to guarantee termination. A per-user state
 machine gates two specific tools (`updateIncidentTiming`,
 `updateBlockerTiming`) so they can only be invoked in direct response to
-a user's confirmation of a duplicate-report prompt from a prior turn —
+a user's confirmation of a duplicate-report prompt from a prior turn,
 preventing the write from happening silently before the user has
 actually answered.
 
@@ -100,7 +100,7 @@ condition changes is a safe no-op rather than a repeat notification.
 ### 2.7 Jira integration (`services/jira/jiraClient.js`)
 A thin REST client wrapping Jira Cloud API v3's issue-creation endpoint.
 Called as a best-effort side effect from `reportIncident`/
-`reportBlocker` — wrapped in try/catch so DevPulse's own record is never
+`reportBlocker`, wrapped in try/catch so DevPulse's own record is never
 blocked by Jira being unreachable or misconfigured.
 
 ## 3. Data Design (Entity-Relationship Diagram)
@@ -196,7 +196,7 @@ erDiagram
     }
 ```
 
-## 4. Sequence Diagrams — Key Flows
+## 4. Sequence Diagrams: Key Flows
 
 ### 4.1 Voice message pipeline
 
@@ -259,7 +259,7 @@ sequenceDiagram
 The `pendingDupConfirmation` map tracks, per user, whether the previous
 turn ended on an unanswered "is this the same one?" question. This gates
 which turn is allowed to call `updateIncidentTiming` /
-`updateBlockerTiming` — the write can only happen on the turn that
+`updateBlockerTiming`, the write can only happen on the turn that
 actually answers the question, never the turn that asks it (a real bug
 found via live testing: the write used to fire a turn early).
 

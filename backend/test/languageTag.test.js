@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyLanguage, buildTaggedMessage } from '../src/agent/languageTag.js';
 
-// Mirrors docs/TEST_CASES.md Module 9: Voice Pipeline — Language Tagging
+// Mirrors docs/TEST_CASES.md Module 9: Voice Pipeline, Language Tagging
 
 describe('classifyLanguage', () => {
   test('TC-LNG-01: pure English classifies correctly', () => {

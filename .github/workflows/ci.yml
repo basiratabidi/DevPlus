@@ -8,7 +8,7 @@ on:
 
 jobs:
   backend-syntax:
-    name: Backend (Node.js) — install & syntax check
+    name: Backend (Node.js) - install & syntax check
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -37,7 +37,7 @@ jobs:
           exit $status
 
   backend-unit-tests:
-    name: Backend — unit tests
+    name: Backend - unit tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -61,7 +61,7 @@ jobs:
         run: npm test
 
   ai-services-syntax:
-    name: ai-services (Python) — syntax check
+    name: ai-services (Python) - syntax check
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -85,7 +85,7 @@ jobs:
           exit $status
 
   ai-services-docker-build:
-    name: ai-services — Docker image builds
+    name: ai-services - Docker image builds
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -94,7 +94,7 @@ jobs:
         run: docker build -t devpulse-ai-services:ci ./ai-services
 
   backend-healthcheck:
-    name: Backend — boots without crashing
+    name: Backend - boots without crashing
     runs-on: ubuntu-latest
     defaults:
       run:

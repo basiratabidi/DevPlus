@@ -2,8 +2,8 @@
 
 An agentic WhatsApp assistant for an engineering team's daily ops. Team
 members log status updates, report incidents/blockers, and track
-deployments conversationally — by text or voice, in English, Urdu, or
-Roman Urdu — instead of opening Slack, Jira, or a dashboard directly.
+deployments conversationally, by text or voice, in English, Urdu, or
+Roman Urdu, instead of opening Slack, Jira, or a dashboard directly.
 
 Architecture pattern (WhatsApp → LLM agent → controlled tools →
 PostgreSQL, with n8n for time-based sweeps) mirrors a GlucoWhats-style
@@ -12,7 +12,7 @@ build, applied to a different case study.
 ## What's built and working
 
 - **Conversational logging**: task updates, incidents (P1-P4 severity),
-  blockers, deployments — via natural language, no rigid format.
+  blockers, deployments, via natural language, no rigid format.
 - **Duplicate detection**: before logging a new incident/blocker, checks
   for a similar still-open one and asks for confirmation instead of
   creating a duplicate.
@@ -25,13 +25,13 @@ build, applied to a different case study.
   agent, so reply-language selection doesn't depend on the LLM correctly
   inferring language from a possibly-noisy transcript.
 - **Jira integration**: reporting an incident or blocker also creates a
-  matching Jira issue automatically (best-effort — DevPulse stays the
+  matching Jira issue automatically (best-effort, DevPulse stays the
   source of truth even if Jira is unreachable/misconfigured).
 - **PDF reports**: activity summaries and open-blockers lists, generated
   and sent as WhatsApp documents.
 - **Reminders & escalation**: standup/deployment reminders, and
   automatic escalation to a team lead for P1 incidents or blockers open
-  past a threshold — run via n8n cron workflows hitting `/cron/*` routes,
+  past a threshold, run via n8n cron workflows hitting `/cron/*` routes,
   with de-dup guards so the same event doesn't re-fire on every sweep.
 - **Onboarding**: new team members register themselves conversationally
   via WhatsApp.
@@ -97,19 +97,19 @@ functionality: `DATABASE_URL`, `GROQ_API_KEY`, `WHATSAPP_PHONE_NUMBER_ID`,
 
 - **Groq free-tier rate limits**: the agent model has both a per-minute
   and a 200,000-tokens/day cap on the free/on-demand tier. Heavy testing
-  or a busy demo day can exhaust this — the agent degrades gracefully
+  or a busy demo day can exhaust this; the agent degrades gracefully
   (falls back to a plain confirmation rather than crashing) but won't
   produce full LLM replies until the quota resets. Consider Groq's paid
   Dev Tier before a live demo if this is a risk.
 - **TTS for mixed-language replies**: the self-hosted VITS models are
-  strictly per-language (English or Urdu-script) — a mixed-language reply
-  gets transliterated and synthesized in one voice, it can't natively
+  strictly per-language (English or Urdu-script); a mixed-language reply
+  gets transliterated and synthesized in one voice, but it can't natively
   speak code-switched audio.
 - **Whisper auto-detect** can occasionally misidentify short/ambiguous
   audio as an unrelated language; there's a retry-to-Urdu fallback for
   this, but it isn't foolproof.
 - **`scheduled_for` on deployments** is now a hard-required field
-  (resolved from natural language or asked for explicitly) — this was a
+  (resolved from natural language or asked for explicitly); this was a
   known unreliable spot before the fix.
 - Running locally via ngrok, not yet deployed to a persistent host.
 

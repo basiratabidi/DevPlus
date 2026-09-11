@@ -1,19 +1,19 @@
 # Project Proposal: DevPulse
 
 ## 1. Title
-**DevPulse — An Agentic WhatsApp Assistant for Engineering Team Operations**
+**DevPulse: An Agentic WhatsApp Assistant for Engineering Team Operations**
 
 ## 2. Introduction
 
 Engineering teams routinely fragment their daily operational communication
-across multiple tools — Slack for chat, Jira for issue tracking, standups
+across multiple tools: Slack for chat, Jira for issue tracking, standups
 for status updates, and various dashboards for deployment/incident
 visibility. This fragmentation costs time and creates friction, especially
 for distributed or fast-moving teams where a quick status update or
 incident report should not require opening a dedicated tool.
 
 DevPulse addresses this by moving the entire interaction surface into
-WhatsApp — an application every team member already has open — and using
+WhatsApp, an application every team member already has open, and using
 a large language model (LLM) as a conversational front-end to structured,
 auditable backend operations (a PostgreSQL database and, optionally, an
 external issue tracker).
@@ -24,8 +24,8 @@ Team members lose time and context switching between multiple tools
 (Slack, Jira, dashboards) to perform simple, frequent operational tasks:
 logging a status update, reporting an incident or blocker, or tracking a
 deployment. These tools also assume a fixed input format (forms, slash
-commands), which does not accommodate natural, conversational reporting
-— particularly for teams where some members are more comfortable
+commands), which does not accommodate natural, conversational reporting,
+particularly for teams where some members are more comfortable
 communicating in Urdu or Roman Urdu than in formal written English.
 
 ## 4. Objectives
@@ -73,9 +73,12 @@ LLM judgment alone proved unreliable during development.
 Development proceeded iteratively: each subsystem (agent core, voice
 pipeline, cron/escalation, Jira integration) was built, then tested
 against real usage (including live WhatsApp round-trips) to surface and
-fix issues that only appear under real conditions — several real defects
-were found and fixed this way (see `TESTING.md`), rather than assumed
-away.
+fix issues that only appear under real conditions: several real defects
+were found and fixed this way (see `TESTING.md` in this folder), rather
+than assumed away. An automated test suite and CI pipeline (see the
+Tools and Technologies table) were added later in development to guard
+against regressions on the parts of the system that are deterministic
+enough to test automatically.
 
 ## 7. Tools and Technologies
 
@@ -91,11 +94,13 @@ away.
 | Issue tracking | Jira Cloud REST API |
 | AI microservice | Python, FastAPI |
 | Containerization | Docker / Docker Compose |
+| CI/CD | GitHub Actions (syntax checks, Docker build check, backend boot/health check, and the automated unit test suite, run on every push) |
+| Testing | Node's built-in `node:test` runner (26 automated cases covering the deterministic language classifier and agent confirmation logic) |
 
 ## 8. Expected Outcomes
 
 A working, tested WhatsApp assistant that a small engineering team could
-realistically adopt for daily operational logging — demonstrated via a
+realistically adopt for daily operational logging, demonstrated via a
 live demo covering English, Urdu, and Roman Urdu voice and text
 interactions, duplicate-report handling, automated escalation, and Jira
 issue creation.

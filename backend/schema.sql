@@ -116,11 +116,11 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_missed_checkin_alert DATE;
 
 
 -- ============================================================
--- FULL CLEAN SEED — wipes existing test junk, rebuilds cleanly
+-- FULL CLEAN SEED, wipes existing test junk, rebuilds cleanly
 -- around ONE verified user (923392001026)
 -- ============================================================
 
--- 1. Clean slate — remove all existing rows (CASCADE handles dependents)
+-- 1. Clean slate, remove all existing rows (CASCADE handles dependents)
 --TRUNCATE users, profiles, incidents, task_logs, deployments,
 --       blockers, reminders, escalation_contacts, escalation_events
 --       RESTART IDENTITY CASCADE;
@@ -130,11 +130,11 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_missed_checkin_alert DATE;
 --VALUES ('923392001026', 'Basirat');
 -- id = 1 (since we just restarted identity)
 
--- 3. Profile — standup_time in the past, so missed-checkin sweep can trigger
+-- 3. Profile, standup_time in the past, so missed-checkin sweep can trigger
 --INSERT INTO profiles (user_id, role, team, standup_time, notify_on_p1)
 --VALUES (1, 'developer', 'backend', CURRENT_TIME - interval '1 hour', TRUE);
 
--- 4. Escalation contact — same verified number, since Meta's test tier
+-- 4. Escalation contact, same verified number, since Meta's test tier
 -- only allows messaging this one number regardless of role
 --INSERT INTO escalation_contacts (user_id, contact_name, contact_number, relation)
 --VALUES (1, 'Team Lead', '923392001026', 'team_lead');

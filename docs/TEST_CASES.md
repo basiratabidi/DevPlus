@@ -1,9 +1,9 @@
 # Test Case Specification
-## DevPulse — Positive and Negative Test Cases
+## DevPulse: Positive and Negative Test Cases
 
 Formal test case specification, organized by module. Each case includes
 preconditions, steps, and expected result. Cross-reference: `TESTING.md`
-records actual execution results for the cases marked 🟢/🔴 there — this
+records actual execution results for the cases marked 🟢/🔴 there, this
 document is the specification (what *should* be tested), not the log of
 what already was.
 
@@ -23,7 +23,7 @@ what already was.
 | TC-WH-05 | N | Invalid signature | Same | POST with a fabricated/incorrect signature header | HTTP 401, payload not processed |
 | TC-WH-06 | N | Missing signature header | Same | POST with no `x-hub-signature-256` header at all | HTTP 401 |
 | TC-WH-07 | N | Duplicate message delivery | A message with ID `X` was already processed | Re-deliver the same `message.id` | Second delivery is silently ignored (no duplicate reply, no duplicate DB write) |
-| TC-WH-08 | N | Unsupported message type | — | Send a message type other than text/audio (e.g. image, location) | HTTP 200, no processing, no crash |
+| TC-WH-08 | N | Unsupported message type |, | Send a message type other than text/audio (e.g. image, location) | HTTP 200, no processing, no crash |
 | TC-CR-01 | P | Cron request with correct secret | `CRON_SECRET` configured | POST `/cron/reminders` with matching `x-cron-secret` | HTTP 200 |
 | TC-CR-02 | N | Cron request, wrong secret | Same | POST with an incorrect secret value | HTTP 401 |
 | TC-CR-03 | N | Cron request, no secret | Same | POST with the header omitted entirely | HTTP 401 |
@@ -47,7 +47,7 @@ what already was.
 | TC-INC-04 | N | Invalid severity value | Agent attempts `reportIncident` with severity outside P1-P4 | Tool throws/rejects; agent does not silently coerce to a default |
 | TC-INC-05 | P | Duplicate detected, user confirms same | Report an incident matching an already-open one; confirm "yes" | `updateIncidentTiming` called, no new row, `reported_at` refreshed |
 | TC-INC-06 | P | Duplicate suspected, user says it's different | Same setup; user replies "no, new issue" | `reportIncident` proceeds normally, new row created |
-| TC-INC-07 | N | Duplicate-check write-before-confirm | Report an incident matching an open one (ask turn only) | **No DB write occurs** on the asking turn — verified by querying `reported_at` immediately after |
+| TC-INC-07 | N | Duplicate-check write-before-confirm | Report an incident matching an open one (ask turn only) | **No DB write occurs** on the asking turn, verified by querying `reported_at` immediately after |
 | TC-INC-08 | P | Jira issue created on report | Jira configured with valid credentials and a valid issue type | `jira_issue_key` populated, reply mentions the Jira key |
 | TC-INC-09 | N | Jira unreachable/misconfigured | Invalid `JIRA_API_TOKEN` or unset Jira env vars | Incident still created successfully; `jira_issue_key` stays null; no error surfaced to the user |
 | TC-INC-10 | N | Jira issue type doesn't exist in project | `JIRA_INCIDENT_ISSUE_TYPE` set to a type not configured in the target project | Jira call fails gracefully (caught), incident still recorded, error logged server-side only |
@@ -92,9 +92,9 @@ what already was.
 | TC-PDF-01 | P | Blockers PDF with open blockers | User has ≥1 open blocker | PDF generated and sent listing them |
 | TC-PDF-02 | P | Blockers PDF with none open | User has 0 open blockers | PDF still generated, shows an empty/"none" state, does not error |
 | TC-PDF-03 | P | Activity report PDF | User requests "what happened this week" | PDF generated covering the requested window |
-| TC-PDF-04 | N | PDF generation tool referenced but not implemented | (Historical regression case) System prompt references a tool not in `TOOL_IMPL` | Should not crash the turn or produce a false "sent" claim — must either implement the tool or fall back safely |
+| TC-PDF-04 | N | PDF generation tool referenced but not implemented | (Historical regression case) System prompt references a tool not in `TOOL_IMPL` | Should not crash the turn or produce a false "sent" claim, must either implement the tool or fall back safely |
 
-## Module 8: Voice Pipeline — STT
+## Module 8: Voice Pipeline (STT)
 
 | TC ID | Type | Title | Steps | Expected Result |
 |---|---|---|---|---|
@@ -106,7 +106,7 @@ what already was.
 | TC-STT-06 | N | Silent/empty audio | Voice note with no discernible speech | Empty or near-empty transcript handled gracefully, agent asks user to repeat rather than acting on nothing |
 | TC-STT-07 | N | Media download failure | Simulate a failed/expired media URL from Meta | User receives an apology/retry message; no crash |
 
-## Module 9: Voice Pipeline — Language Tagging
+## Module 9: Voice Pipeline (Language Tagging)
 
 | TC ID | Type | Title | Steps | Expected Result |
 |---|---|---|---|---|
@@ -119,7 +119,7 @@ what already was.
 | TC-LNG-07 | N | Tag authority under content mismatch | Tag says ENGLISH but transcript content is garbled/looks like another language | Reply stays in English; does not pattern-match the garbled content's apparent language |
 | TC-LNG-08 | N | Empty transcript | Empty string passed to classifier | Returns a safe default (`english`) rather than throwing |
 
-## Module 10: Voice Pipeline — TTS
+## Module 10: Voice Pipeline (TTS)
 
 | TC ID | Type | Title | Steps | Expected Result |
 |---|---|---|---|---|
@@ -127,7 +127,7 @@ what already was.
 | TC-TTS-02 | P | Urdu reply synthesized correctly | Known-Urdu reply text | Urdu VITS model used, audio returned |
 | TC-TTS-03 | N | English technical terms embedded in an Urdu reply | Reply containing "severity", "P1"-"P4" | Terms phonetically rendered into Urdu script, not silently dropped by the tokenizer (regression case) |
 | TC-TTS-04 | N | `known_lang` hint mismatches actual content | `known_lang=english` passed but reply text contains Urdu script | Falls through to full classification rather than trusting a wrong hint |
-| TC-TTS-05 | N | WhatsApp rejects the audio format | Upload declares the wrong MIME type | Regression case — must declare `audio/mpeg` matching actual MP3 bytes |
+| TC-TTS-05 | N | WhatsApp rejects the audio format | Upload declares the wrong MIME type | Regression case, must declare `audio/mpeg` matching actual MP3 bytes |
 | TC-TTS-06 | N | TTS service unreachable | `ai-services` down or `/speak` call fails | Falls back to a text reply rather than the whole turn failing |
 
 ## Module 11: Resilience

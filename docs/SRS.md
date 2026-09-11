@@ -1,5 +1,5 @@
 # Software Requirements Specification (SRS)
-## DevPulse — Agentic WhatsApp Assistant for Engineering Team Operations
+## DevPulse: Agentic WhatsApp Assistant for Engineering Team Operations
 
 Format follows IEEE 830 conventions.
 
@@ -72,7 +72,7 @@ Docker, PostgreSQL (Neon), n8n for scheduling, deployed behind an
 HTTPS-capable host (WhatsApp Cloud API requires HTTPS webhooks).
 
 ### 2.5 Design and Implementation Constraints
-- Must operate entirely through WhatsApp as the user-facing interface —
+- Must operate entirely through WhatsApp as the user-facing interface,
   no separate app or web UI.
 - LLM and STT calls depend on Groq's hosted API and its rate limits
   (documented: 200,000 tokens/day on the free tier).
@@ -136,7 +136,7 @@ an already-sent reminder.
 **FR-10 Escalation.** The system shall automatically notify a
 designated escalation contact when an incident is reported at P1
 severity, a blocker is reported at high severity, or a blocker remains
-open past a configurable time threshold — without re-notifying for the
+open past a configurable time threshold, without re-notifying for the
 same already-escalated event on every subsequent check.
 
 **FR-11 PDF reports.** The system shall generate and deliver, as a
@@ -146,7 +146,7 @@ PDF list of currently open blockers (on request).
 **FR-12 Jira mirroring.** When configured, the system shall
 automatically create a corresponding Jira issue when a new incident or
 blocker is reported, and record the resulting Jira issue key. This shall
-be a non-blocking, best-effort action — a Jira failure shall not prevent
+be a non-blocking, best-effort action, a Jira failure shall not prevent
 the underlying incident/blocker from being recorded.
 
 **FR-13 Onboarding.** The system shall support a conversational
@@ -193,12 +193,12 @@ identifier-only message with no actionable context.
 
 ### 3.3 External Interface Requirements
 
-**EIR-1** WhatsApp Cloud API (Meta) — inbound webhook (text/audio
+**EIR-1** WhatsApp Cloud API (Meta), inbound webhook (text/audio
 messages), outbound text/audio/document messages.
 
-**EIR-2** Groq API — chat completions (agent reasoning), audio
+**EIR-2** Groq API, chat completions (agent reasoning), audio
 transcriptions (STT).
 
-**EIR-3** Jira Cloud REST API v3 — issue creation (optional).
+**EIR-3** Jira Cloud REST API v3, issue creation (optional).
 
-**EIR-4** PostgreSQL (Neon) — primary data store.
+**EIR-4** PostgreSQL (Neon), primary data store.

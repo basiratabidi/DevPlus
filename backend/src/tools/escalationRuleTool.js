@@ -40,7 +40,7 @@ export async function evaluateEscalation({ userId, sourceType, sourceId, ruleTri
   // 11. Source: incident #17." landing with zero context in the contact's
   // own WhatsApp thread).
   const text = summary
-    ? `🚨 Escalation: ${summary} — ${relation} ${contact.reporter_name}.`
+    ? `🚨 Escalation: ${summary}, ${relation} ${contact.reporter_name}.`
     : `🚨 Escalation triggered for ${contact.reporter_name} (${sourceType}${sourceId != null ? ` #${sourceId}` : ''}).`;
 
   await sendWhatsAppMessage({ to: contact.contact_number, text });

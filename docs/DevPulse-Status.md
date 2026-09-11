@@ -1,11 +1,11 @@
-# DevPulse — Project Status
-*Updated 2026-09-11 — 16 days to presentation (Sept 27)*
+# DevPulse Project Status
+*Updated 2026-09-11, 16 days to presentation (Sept 27)*
 
 ## What DevPulse is
 
 An agentic WhatsApp assistant for an engineering team's daily ops: team
 members log status updates, report incidents/blockers, track
-deployments, and get automated reminders and severity-based escalation —
+deployments, and get automated reminders and severity-based escalation,
 all conversationally, via text or voice, in English or Urdu/Roman Urdu.
 
 ---
@@ -13,7 +13,7 @@ all conversationally, via text or voice, in English or Urdu/Roman Urdu.
 ## Built and confirmed working
 
 ### Data layer
-PostgreSQL on Neon, full schema applied (`schema.sql`) — users, profiles,
+PostgreSQL on Neon, full schema applied (`schema.sql`), users, profiles,
 incidents, task_logs, deployments, blockers, reminders,
 escalation_contacts, escalation_events. All core tools also covered by an
 automated `node:test` suite where they're pure/DB-free (`backend/test/`),
@@ -31,7 +31,7 @@ Webhook signature verification, text and voice round trips confirmed
 live: task log, incident (with escalation prompt), blocker, deployment.
 
 ### Onboarding
-`src/agent/onboarding.js` — a real conversational registration flow, not
+`src/agent/onboarding.js`, a real conversational registration flow, not
 just backing tools. An unrecognized WhatsApp number is routed through a
 dedicated LLM+tool loop (`createUser` → `upsertProfile` →
 `addEscalationContact` (optional) → `completeOnboarding`) before it ever
@@ -52,14 +52,14 @@ the write fired a turn too early.
   transcript. Confirmed live for English, Urdu, Roman Urdu, and
   code-switched speech.
 - **Language tagging:** deterministic, rule-based classifier
-  (`languageTag.js`, not LLM-based — LLM inference was found
+  (`languageTag.js`, not LLM-based, LLM inference was found
   non-deterministic even at temperature 0), tags voice transcripts
   before they reach the agent. Covered by an automated test suite
   (8 cases from `TEST_CASES.md`'s TC-LNG series).
 - **Voice-out:** self-hosted VITS/MMS TTS models (English + Urdu), not
   `gtts`. Urdu synthesis includes an LLM transliteration/phonetic-
   rendering step so embedded English terms (e.g. "P1", "severity")
-  aren't silently dropped by the Urdu tokenizer — a real bug found and
+  aren't silently dropped by the Urdu tokenizer, a real bug found and
   fixed via live testing.
 - Reply modality matches input modality, with fallback to text if TTS
   fails.
@@ -79,12 +79,12 @@ back-to-back firing to confirm the guards hold.
 ### Escalation
 `evaluateEscalation` logs an `escalation_events` row and sends a real
 WhatsApp message to the user's configured escalation contact (not just
-a DB write) when triggered — P1 incident, high-severity blocker, or a
+a DB write) when triggered, P1 incident, high-severity blocker, or a
 blocker stale past the configured threshold.
 
 ### Jira integration
 Best-effort, non-blocking issue creation on `reportIncident`/
-`reportBlocker` (`services/jira/jiraClient.js`) — a Jira failure never
+`reportBlocker` (`services/jira/jiraClient.js`), a Jira failure never
 blocks the underlying record. `jira_issue_key` stored on the record and
 mentioned in the agent's confirmation reply.
 
@@ -98,44 +98,44 @@ check, and the unit test suite on every push.
 
 ## Genuinely still open
 
-- **Escalation contact live-notify with a real second number** — the
+- **Escalation contact live-notify with a real second number**, the
   code path sends a real WhatsApp message, but this hasn't been
   confirmed against an actual second WhatsApp number receiving it.
-  Step-by-step in `docs/LIVE_TEST_CHECKLIST.md` section A — needs you to
+  Step-by-step in `docs/LIVE_TEST_CHECKLIST.md` section A, needs you to
   actually run it with a second phone; not something that can be
   verified without one.
-- **Multi-user testing** — all testing to date has been single-user.
-  Step-by-step in `docs/LIVE_TEST_CHECKLIST.md` section B — same
+- **Multi-user testing**, all testing to date has been single-user.
+  Step-by-step in `docs/LIVE_TEST_CHECKLIST.md` section B, same
   constraint, needs a second real device.
-- **Deployment to a persistent host** — **decided**: staying local +
+- **Deployment to a persistent host**, **decided**: staying local +
   ngrok for the demo rather than standing up and hardening a new host
   this close to the presentation (see `docs/DEPLOYMENT.md` section 0
-  for the reasoning and the risk it introduces — free ngrok's URL
+  for the reasoning and the risk it introduces, free ngrok's URL
   rotates on restart unless a static domain is claimed, which that
   section walks through).
-- **Credential rotation** — Groq, WhatsApp access token, and Jira API
+- **Credential rotation**, Groq, WhatsApp access token, and Jira API
   token are all rotated and directly verified (each against a real API
   call on the new credential, not just assumed from a restart). The
-  WhatsApp **App Secret** is the one holdout — the value returned from
+  WhatsApp **App Secret** is the one holdout, the value returned from
   Meta's dashboard was identical to the old one, so it wasn't actually
   regenerated; still exposed. See `docs/CREDENTIAL_ROTATION.md` for the
   detail.
-- **Presentation materials** — `docs/DEMO_SCRIPT.md` now exists,
+- **Presentation materials**, `docs/DEMO_SCRIPT.md` now exists,
   grounded in real verified test cases from `docs/TESTING.md` (not
-  invented dialogue) — five flows: text logging, Urdu voice, duplicate
+  invented dialogue), five flows: text logging, Urdu voice, duplicate
   detection, Jira mirroring, P1 escalation. Slides still don't exist.
 
 ---
 
 ## Recommended order for remaining 16 days
 
-Nearly everything functional is done — this is now mostly a
+Nearly everything functional is done, this is now mostly a
 rehearsal/polish list, not a build list.
 
 1. **This week:** rotate credentials (`docs/CREDENTIAL_ROTATION.md`);
    claim a static ngrok domain and re-point Meta's webhook once
    (`docs/DEPLOYMENT.md` section 0) so it stops being a restart risk.
-2. **Next:** run `docs/LIVE_TEST_CHECKLIST.md` (needs a second phone) —
+2. **Next:** run `docs/LIVE_TEST_CHECKLIST.md` (needs a second phone),
    escalation live-notify and a multi-user pass.
 3. **Final week:** slides (demo script and talking points are already
    written in `docs/DEMO_SCRIPT.md`), then rehearse the five flows in
@@ -145,21 +145,21 @@ rehearsal/polish list, not a build list.
 
 ## Known honest caveats to mention in your viva/presentation
 - Roman Urdu handling relies on a general-purpose LLM for
-  transliteration (Groq), not a model fine-tuned for the task — good but
+  transliteration (Groq), not a model fine-tuned for the task, good but
   not perfect on rare/ambiguous words.
 - Self-hosted TTS runs on CPU in the current deployment target; a local
   Urdu LLM alternative was evaluated for a different sub-task and
   measured too slow (~2.4 tok/s) to be usable, which is why STT and
   agent reasoning stay on Groq's hosted API rather than being
   self-hosted too.
-- Groq's free tier caps at 200,000 tokens/day, organization-wide — real
+- Groq's free tier caps at 200,000 tokens/day, organization-wide, real
   testing during this project has hit that cap more than once.
-- Running locally + ngrok, not on a persistent server — a deliberate
+- Running locally + ngrok, not on a persistent server, a deliberate
   choice for a scoped demo (see `docs/DEPLOYMENT.md` section 0), would
   need real deployment for production use.
-- WhatsApp Cloud API test number is capped at 5 verified recipients —
+- WhatsApp Cloud API test number is capped at 5 verified recipients,
   sufficient for a demo, not a real team rollout without completing
   Meta's production number setup.
 - Jira mirroring, duplicate detection, and the automated test suite are
-  all real, working, and demo-able — worth leading with, since they go
+  all real, working, and demo-able, worth leading with, since they go
   beyond what a "scaffold" FYP typically has by this stage.
