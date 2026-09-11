@@ -105,6 +105,13 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN DEFAUL
 -- re-escalate and re-notify on every cron sweep for as long as the
 -- underlying condition stays true (confirmed by direct testing).
 ALTER TABLE blockers ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ;
+
+-- Jira integration: links a DevPulse incident/blocker to the Jira issue
+-- auto-created for it (one-way push, DevPulse stays the source of truth
+-- for the conversation). Null when Jira isn't configured or the create
+-- call failed - it's a best-effort side effect, not a hard dependency.
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS jira_issue_key VARCHAR(20);
+ALTER TABLE blockers ADD COLUMN IF NOT EXISTS jira_issue_key VARCHAR(20);
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_missed_checkin_alert DATE;
 
 

@@ -1,5 +1,6 @@
 import { query } from '../db/pool.js';
 import { evaluateEscalation } from './escalationRuleTool.js';
+import { createJiraIssue } from '../services/jira/jiraClient.js';
 
 const VALID_SEVERITIES = ['low', 'medium', 'high'];
 
@@ -14,7 +15,25 @@ export async function reportBlocker({ userId, description, severity }) {
      RETURNING id, reported_at`,
     [userId, description, severity]
   );
-  return result.rows[0];
+  const blocker = result.rows[0];
+
+  // Best-effort Jira push - see reportIncident for the same pattern and
+  // reasoning (never blocks or fails the blocker report itself).
+  try {
+    const jiraKey = await createJiraIssue({
+      summary: `[Blocker, ${severity}] ${description}`,
+      description,
+      issueType: process.env.JIRA_BLOCKER_ISSUE_TYPE || 'Task',
+    });
+    if (jiraKey) {
+      await query(`UPDATE blockers SET jira_issue_key = $1 WHERE id = $2`, [jiraKey, blocker.id]);
+      blocker.jiraIssueKey = jiraKey;
+    }
+  } catch (err) {
+    console.error('Jira issue creation failed for blocker', blocker.id, err);
+  }
+
+  return blocker;
 }
 
 

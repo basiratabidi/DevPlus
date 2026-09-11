@@ -25,12 +25,13 @@ async def transcribe(file: UploadFile = File(...)):
 
 class SpeakRequest(BaseModel):
     text: str
+    known_lang: str | None = None
 
 
 @app.post("/speak")
 def speak(req: SpeakRequest):
     try:
-        audio_bytes = text_to_speech(req.text)
-        return Response(content=audio_bytes, media_type="audio/wav")  # was audio/mpeg
+        audio_bytes = text_to_speech(req.text, req.known_lang)
+        return Response(content=audio_bytes, media_type="audio/mpeg")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

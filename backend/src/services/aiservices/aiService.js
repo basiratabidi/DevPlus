@@ -21,11 +21,11 @@ export async function transcribeViaAI(buffer, mimeType = 'audio/ogg') {
   return data.text;
 }
 
-export async function speakViaAI(text) {
+export async function speakViaAI(text, knownLang = null) {
   const res = await fetch(`${AI_SERVICE_URL}/speak`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, known_lang: knownLang }),
   });
 
   if (!res.ok) {

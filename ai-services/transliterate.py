@@ -35,8 +35,26 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
 
 Rules:
 - If english: lang="en", text=the input unchanged.
-- If urdu_script: lang="ur", text=the input unchanged.
-- If roman_urdu: lang="ur", text=the input converted to proper Urdu script.
+- If urdu_script or roman_urdu: lang="ur", text=the FULL input in Urdu
+  script - this includes phonetically rendering ANY embedded Latin-script
+  words/codes into Urdu script too (e.g. "severity" -> "سیوریٹی", "P1" ->
+  "پی ون"), even if most of the input is already Urdu script. This is not
+  optional: the Urdu voice engine's vocabulary is Urdu-script only and
+  silently DROPS any Latin letters it receives, so a literal "P1" or
+  "server" left un-rendered will not be spoken at all, not just
+  mispronounced.
+
+Common terms and their Urdu-script phonetic renderings:
+P1/P2/P3/P4 -> پی ون / پی ٹو / پی تھری / پی فور
+severity -> سیوریٹی
+deployment -> ڈپلائمنٹ
+database -> ڈیٹا بیس
+server -> سرور
+API -> اے پی آئی
+production -> پروڈکشن
+staging -> اسٹیجنگ
+blocker -> بلاکر
+incident -> انسیڈنٹ
 
 Examples:
 Input: "I fixed the login bug"
@@ -47,6 +65,9 @@ Output: {"lang": "ur", "text": "آج میرا موڈ بہت خراب تھا کی
 
 Input: "yeh bug kal fix ho jayega"
 Output: {"lang": "ur", "text": "یہ بگ کل فکس ہو جائے گا"}
+
+Input: "مجھے اس کی severity جاننی ہے۔ P1, P2, P3 یا P4؟"
+Output: {"lang": "ur", "text": "مجھے اس کی سیوریٹی جاننی ہے۔ پی ون, پی ٹو, پی تھری یا پی فور؟"}
 
 Input: "server is down, urgent"
 Output: {"lang": "en", "text": "server is down, urgent"}"""

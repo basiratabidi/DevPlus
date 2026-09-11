@@ -141,18 +141,17 @@ const toolDefinitions = [
             enum: ['scheduled', 'success', 'failed', 'rolled_back', null],
           },
           scheduledFor: {
-            type: ['string', 'null'],
+            type: 'string',
             description:
-              'ISO 8601 date-time the deployment is scheduled for, resolved from the ' +
-              'user\'s natural-language timing (e.g. "tomorrow", "next Monday 3pm") using ' +
-              'the current date/time given in the system prompt. Required whenever status ' +
-              'is "scheduled" (or omitted, since it defaults to scheduled) — if the user did ' +
-              'not give a date/time, ask for it before calling this tool so the deployment ' +
-              'reminder automation can trigger on it.',
+              'REQUIRED. ISO 8601 date-time, resolved from the user\'s natural-language ' +
+              'timing (e.g. "tomorrow", "next Monday 3pm") using the current date/time ' +
+              'given in the system prompt. If the deployment already happened and no ' +
+              'specific time was given, use the current date/time. If you cannot resolve ' +
+              'any usable time at all, do not call this tool yet - ask the user for it first.',
           },
           notes: { type: ['string', 'null'] },
         },
-        required: ['serviceName', 'environment'],
+        required: ['serviceName', 'environment', 'scheduledFor'],
       },
     },
   },
@@ -238,11 +237,13 @@ function describeToolResult(name, args, result) {
     case 'logTask':
       return `Logged task update: "${args.summary}"`;
     case 'reportIncident':
-      return `Logged ${args.severity} incident #${result.id}: "${args.title}"`;
+      return `Logged ${args.severity} incident #${result.id}: "${args.title}"`
+        + (result.jiraIssueKey ? ` (Jira: ${result.jiraIssueKey})` : '');
     case 'updateIncidentTiming':
       return `Updated timing on existing incident #${result.id} (not logged as new)`;
     case 'reportBlocker':
-      return `Logged blocker #${result.id}: "${args.description}"`;
+      return `Logged blocker #${result.id}: "${args.description}"`
+        + (result.jiraIssueKey ? ` (Jira: ${result.jiraIssueKey})` : '');
     case 'updateBlockerTiming':
       return `Updated timing on existing blocker #${result.id} (not logged as new)`;
     case 'logDeployment':

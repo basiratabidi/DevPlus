@@ -7,6 +7,7 @@ import { sendWhatsAppMessage } from './sendMessage.js';
 import { downloadMedia } from './mediaDownload.js';
 import { transcribeViaAI as transcribeAudio, speakViaAI as textToSpeech } from '../aiservices/aiService.js';
 import { sendWhatsAppAudio } from './sendAudio.js';
+import { buildTaggedMessage } from '../../agent/languageTag.js';
 
 export const webhookRouter = express.Router();
 
@@ -91,10 +92,13 @@ webhookRouter.post('/webhook/whatsapp', async (req, res) => {
     }
 
     let messageText = null;
+    let agentMessage = null;
+    let voiceInputLang = null;
     const wasVoiceNote = message.type === 'audio';
 
     if (message.type === 'text') {
       messageText = message.text?.body;
+      agentMessage = messageText;
     } else if (wasVoiceNote) {
       const mediaId = message.audio?.id;
       if (!mediaId) {
@@ -102,8 +106,18 @@ webhookRouter.post('/webhook/whatsapp', async (req, res) => {
       }
       try {
         const { buffer, mimeType } = await downloadMedia(mediaId);
+        console.log('Voice note received: mimeType=%s bytes=%d', mimeType, buffer.length);
         messageText = await transcribeAudio(buffer, mimeType);
-        console.log('Transcribed voice note:', messageText);
+        console.log('Raw STT transcript:', messageText);
+
+        // Deterministic language tag, isolated to the voice path - typed
+        // text already relies on the LLM matching language successfully,
+        // so it's left untouched here rather than risking a behavior
+        // change on a flow that already works well.
+        const { lang, taggedMessage } = buildTaggedMessage(messageText);
+        console.log('Language tag:', lang, '| taggedMessage:', taggedMessage);
+        agentMessage = taggedMessage;
+        voiceInputLang = lang;
       } catch (err) {
         console.error('Voice note transcription failed:', err);
         await sendWhatsAppMessage({
@@ -142,11 +156,18 @@ webhookRouter.post('/webhook/whatsapp', async (req, res) => {
     }
 
     const userId = existingUserId;
-    const reply = await runAgent({ userId, message: messageText });
+    console.log('Agent input:', agentMessage);
+    const reply = await runAgent({ userId, message: agentMessage });
+    console.log('Agent response:', reply);
 
     if (wasVoiceNote) {
       try {
-        const audioBuffer = await textToSpeech(stripMarkdownForSpeech(reply));
+        // Pass the already-known input language through instead of
+        // letting TTS make an independent LLM classification decision -
+        // avoids two separate, potentially-disagreeing language calls
+        // for what should be one continuous language thread.
+        const audioBuffer = await textToSpeech(stripMarkdownForSpeech(reply), voiceInputLang);
+        console.log('TTS known input lang hint:', voiceInputLang);
         await sendWhatsAppAudio({ to: from, buffer: audioBuffer });
       } catch (err) {
         console.error('Voice reply failed, falling back to text:', err);

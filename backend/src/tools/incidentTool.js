@@ -1,5 +1,6 @@
 import { query } from '../db/pool.js';
 import { evaluateEscalation } from './escalationRuleTool.js';
+import { createJiraIssue } from '../services/jira/jiraClient.js';
 
 const VALID_SEVERITIES = ['P1', 'P2', 'P3', 'P4'];
 
@@ -27,6 +28,25 @@ export async function reportIncident({ userId, title, description, severity, aff
       sourceId: incident.id,
       ruleTriggered: 'P1_incident',
     });
+  }
+
+  // Best-effort Jira push - DevPulse stays the source of truth even if
+  // Jira is unconfigured or the API call fails, so this never blocks or
+  // fails the incident report itself.
+  try {
+    const jiraKey = await createJiraIssue({
+      summary: `[${severity}] ${title}`,
+      description: [description, affectedSystem ? `Affected system: ${affectedSystem}` : null]
+        .filter(Boolean)
+        .join('\n'),
+      issueType: process.env.JIRA_INCIDENT_ISSUE_TYPE || 'Bug',
+    });
+    if (jiraKey) {
+      await query(`UPDATE incidents SET jira_issue_key = $1 WHERE id = $2`, [jiraKey, incident.id]);
+      incident.jiraIssueKey = jiraKey;
+    }
+  } catch (err) {
+    console.error('Jira issue creation failed for incident', incident.id, err);
   }
 
   return incident;
