@@ -8,6 +8,7 @@ import { downloadMedia } from './mediaDownload.js';
 import { transcribeViaAI as transcribeAudio, speakViaAI as textToSpeech } from '../aiservices/aiService.js';
 import { sendWhatsAppAudio } from './sendAudio.js';
 import { buildTaggedMessage } from '../../agent/languageTag.js';
+import { indexWebhookHit } from '../opensearch/client.js';
 
 export const webhookRouter = express.Router();
 
@@ -90,6 +91,12 @@ webhookRouter.post('/webhook/whatsapp', async (req, res) => {
     if (!from) {
       return res.sendStatus(200);
     }
+
+    // Fire-and-forget: real system activity for the status dashboard,
+    // never allowed to slow down or fail the actual webhook handling.
+    indexWebhookHit({ from, messageType: message.type, messageId: message.id }).catch((err) =>
+      console.error('Failed to index webhook hit (non-blocking):', err)
+    );
 
     let messageText = null;
     let agentMessage = null;

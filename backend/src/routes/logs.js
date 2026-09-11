@@ -1,5 +1,6 @@
 import express from 'express';
-import { indexCommitLog } from '../services/opensearch/client.js';
+import { indexCommitLog, searchCommitLogs, recentWebhookHits, recentErrorLogs } from '../services/opensearch/client.js';
+import { ingestProjectError } from '../tools/errorIngestTool.js';
 
 export const logsRouter = express.Router();
 
@@ -38,4 +39,61 @@ logsRouter.post('/logs/ingest-commits', requireLogIngestSecret, async (req, res)
   }
 
   res.json({ indexed, total: commits.length });
+});
+
+/**
+ * Hit by a *connected external project's* own CI/error-handler when a
+ * real error occurs there - not DevPulse's own code. Reuses
+ * reportIncident/reportBlocker directly, so an auto-detected P1 gets
+ * the exact same escalation + Jira behavior a human-reported one would.
+ *
+ * Body: { project, level, message, stack?, source? }
+ * level: "critical"/"fatal"/"error" -> incident (P1/P2), "warning"/other -> blocker
+ */
+logsRouter.post('/logs/ingest-error', requireLogIngestSecret, async (req, res) => {
+  const { project, level, message, stack, source } = req.body || {};
+  if (!project || !message) {
+    return res.status(400).json({ error: 'project and message are required' });
+  }
+
+  try {
+    const result = await ingestProjectError({ project, level, message, stack, source });
+    res.json(result);
+  } catch (err) {
+    console.error('logs/ingest-error error', err);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Read-only - backs the status dashboard (public/dashboard.html). Not
+// secret-gated like ingestion: nothing destructive here, and this is a
+// local/demo deployment. Would need real auth before any non-local use.
+logsRouter.get('/logs/recent-commits', async (req, res) => {
+  try {
+    const commits = await searchCommitLogs({ limit: 20 });
+    res.json({ commits });
+  } catch (err) {
+    console.error('logs/recent-commits error', err);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+logsRouter.get('/logs/recent-webhook-hits', async (req, res) => {
+  try {
+    const hits = await recentWebhookHits({ limit: 20 });
+    res.json({ hits });
+  } catch (err) {
+    console.error('logs/recent-webhook-hits error', err);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+logsRouter.get('/logs/recent-errors', async (req, res) => {
+  try {
+    const errors = await recentErrorLogs({ limit: 20 });
+    res.json({ errors });
+  } catch (err) {
+    console.error('logs/recent-errors error', err);
+    res.status(500).json({ error: 'internal_error' });
+  }
 });

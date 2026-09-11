@@ -39,7 +39,17 @@ build, applied to a different case study.
 - **Automatic project-activity logging**: a CI job indexes every real
   commit into a self-hosted OpenSearch instance on push, no developer
   has to report it, and the agent can read it back (`queryProjectActivity`)
-  to answer "what's changed in the codebase recently?".
+  to answer "what's changed in the codebase recently?". Every inbound
+  WhatsApp message is logged the same way (independent of commit
+  activity). Browsable via a built-in status page (`/dashboard`) or the
+  full OpenSearch Dashboards UI (`/opensearch-dashboards`), both
+  reverse-proxied through the backend's one port/tunnel.
+- **Automatic error intake from connected external projects**: a
+  team's own app/service can POST its real errors to `/logs/ingest-error`
+  and DevPulse handles the rest, an auto-detected P1 gets the exact
+  same escalation + Jira creation a human-reported one would (reuses
+  `reportIncident`/`reportBlocker` directly), attributed to a dedicated
+  system user so it's never confused with a real team member's report.
 
 ## Architecture
 
@@ -52,16 +62,18 @@ WhatsApp (Meta Cloud API v25.0)
         |-- agent/languageTag.js  deterministic EN/UR/MIXED classifier for voice input
         |-- tools/*            DB-backed tools the agent can call
         |-- services/jira/     Jira issue auto-creation
-        |-- services/opensearch/  commit-log store client
+        |-- services/opensearch/  commit-log + webhook-hit store client
         |-- routes/cron.js     endpoints polled by n8n (reminders, missed-checkins, stale-blockers)
-        |-- routes/logs.js     endpoint hit by CI on every push (commit logging)
+        |-- routes/logs.js     ingestion (CI) + read endpoints (status page)
+        |-- public/            static status dashboard (served at /dashboard)
+        |-- /opensearch-dashboards  reverse-proxied OpenSearch Dashboards UI
         |
         |--> ai-services/  (Python, FastAPI)        |--> PostgreSQL (Neon)
-        |                                            |--> OpenSearch (self-hosted, commit logs)
-              |-- transcribe.py    Groq Whisper STT
-              |-- transliterate.py Roman Urdu -> Urdu script (Groq LLM)
-              |-- text_to_speech.py  self-hosted VITS TTS
-        |
+        |                                            |--> OpenSearch (self-hosted,
+              |-- transcribe.py    Groq Whisper STT       commit + webhook logs)
+              |-- transliterate.py Roman Urdu -> Urdu script (Groq LLM)     |
+              |-- text_to_speech.py  self-hosted VITS TTS  |--> OpenSearch Dashboards
+        |                                                       (self-hosted)
         |--> n8n   scheduled sweeps for reminders/missed-checkins/stale-blockers
 ```
 
@@ -82,6 +94,16 @@ cd ai-services
 docker compose up -d
 ```
 
+### OpenSearch + OpenSearch Dashboards (automatic activity logging)
+```bash
+cd backend
+docker compose up -d
+```
+Brings up both the OpenSearch engine (port 9200) and OpenSearch
+Dashboards. Dashboards is reverse-proxied through the backend itself at
+`/opensearch-dashboards`, not exposed on its own port, see
+`docs/DEPLOYMENT.md` §4a for why.
+
 ### n8n
 Import the workflow JSON files in `backend/n8n/` (reminders, missed
 check-ins, stale blockers), point them at your backend's `/cron/*`
@@ -100,9 +122,12 @@ See `backend/.env.example` for the full list. Required for core
 functionality: `DATABASE_URL`, `GROQ_API_KEY`, `WHATSAPP_PHONE_NUMBER_ID`,
 `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`,
 `CRON_SECRET`. Optional: `JIRA_*` (Jira integration is a no-op if unset),
-`OPENSEARCH_URL` + `LOG_INGEST_SECRET` (without these, commit-log
-ingestion won't run and `queryProjectActivity` returns no results -
-everything else keeps working, see `docs/DEPLOYMENT.md` §4a).
+`OPENSEARCH_URL` + `LOG_INGEST_SECRET` (without these, commit/error-log
+ingestion won't run and `queryProjectActivity`/`queryRecentErrors`
+return no results - everything else keeps working, see
+`docs/DEPLOYMENT.md` §4a/§4b), `ERROR_ESCALATION_CONTACT_NUMBER` (who to
+notify for auto-detected P1/high-severity errors from connected
+projects, see §4b).
 
 ## Known limitations
 
@@ -131,13 +156,14 @@ backend/
   src/
     agent/          graph.js (agent loop), languageTag.js, memory.js, onboarding.js
     tools/           DB-backed agent tools (incidents, blockers, deployments, etc.)
+      errorIngestTool.js  auto-intake from connected external projects
     services/
       whatsapp/       webhook, media download, message/audio/document sending
       aiservices/     bridge to the Python ai-services
       jira/           Jira issue creation
-      opensearch/     commit-log store client
+      opensearch/     commit + webhook + error log store client
     routes/cron.js    endpoints polled by n8n
-    routes/logs.js    endpoint hit by CI on every push
+    routes/logs.js    CI/connected-project ingestion + read endpoints
     db/pool.js        Postgres connection
   scripts/logPushedCommits.js  manual/local commit-log ingestion (same path CI uses)
   docker-compose.yml  self-hosted OpenSearch

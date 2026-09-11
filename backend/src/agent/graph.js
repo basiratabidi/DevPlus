@@ -11,7 +11,7 @@ import { sendBlockersPdf } from '../tools/blockerPdfTool.js';
 import { logDeployment, listUpcomingDeployments } from '../tools/deploymentTool.js';
 import { getHistory as getDbHistory } from '../tools/historyTool.js';
 import { sendHistoryPdf } from '../tools/historyPdfTool.js';
-import { queryProjectActivity } from '../tools/projectActivityTool.js';
+import { queryProjectActivity, queryRecentErrors } from '../tools/projectActivityTool.js';
 import { getHistory as getConvoHistory, appendMessage, clearHistory } from './memory.js';
 dotenv.config();
 
@@ -203,6 +203,14 @@ const toolDefinitions = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'queryRecentErrors',
+      description: "Look up recent real errors auto-detected from connected external projects (not DevPulse's own code, and not the user's own logged incidents/blockers). Use for questions like \"any recent errors from [project name]?\".",
+      parameters: { type: 'object', properties: {} },
+    },
+  },
 ];
 
 const TOOL_IMPL = {
@@ -219,6 +227,7 @@ const TOOL_IMPL = {
   getHistory: (userId, args) => getDbHistory({ userId, ...args }),
   sendHistoryPdf: (userId, args) => sendHistoryPdf({ userId, ...args }),
   queryProjectActivity: (userId, args) => queryProjectActivity({ ...args }),
+  queryRecentErrors: () => queryRecentErrors({}),
 };
 
 // Common near-miss aliases the model sometimes uses instead of the exact tool name

@@ -69,6 +69,7 @@ message - never ask for their name or number.
 - "Show my blockers" -> sendBlockersPdf (don't list as plain text).
 - "What's changed in the code / what did we ship?" (about the codebase
   itself, not the user's own logged activity) -> queryProjectActivity.
+- "Any recent errors from [connected project]?" -> queryRecentErrors.
 
 AVOIDING DUPLICATE INCIDENT/BLOCKER LOGS
 

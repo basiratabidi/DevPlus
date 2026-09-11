@@ -10,6 +10,8 @@ dotenv.config();
  */
 
 const COMMIT_LOGS_INDEX = 'devpulse-commit-logs';
+const WEBHOOK_HITS_INDEX = 'devpulse-webhook-hits';
+const ERROR_LOGS_INDEX = 'devpulse-error-logs';
 
 function baseUrl() {
   return (process.env.OPENSEARCH_URL || 'http://localhost:9200').replace(/\/$/, '');
@@ -86,6 +88,103 @@ export async function searchCommitLogs({ query, limit = 10 } = {}) {
     if (response.status === 404) return []; // index doesn't exist yet - no commits logged so far
     const errBody = await response.text();
     throw new Error(`OpenSearch search failed: ${response.status} ${errBody}`);
+  }
+
+  const data = await response.json();
+  return data.hits.hits.map((hit) => hit._source);
+}
+
+/**
+ * Indexes one inbound WhatsApp webhook hit (real system activity, not
+ * something a developer reported) - powers the status dashboard's
+ * "recent webhook hits" view. Best-effort: never block or fail the
+ * actual webhook handling because logging it failed.
+ */
+export async function indexWebhookHit(hit) {
+  if (!isConfigured()) return null;
+
+  const response = await fetch(`${baseUrl()}/${WEBHOOK_HITS_INDEX}/_doc`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...hit, timestamp: hit.timestamp || new Date().toISOString() }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`OpenSearch index failed: ${response.status} ${body}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Most recent webhook hits, newest first - used by the status dashboard.
+ */
+export async function recentWebhookHits({ limit = 20 } = {}) {
+  if (!isConfigured()) return [];
+
+  const response = await fetch(`${baseUrl()}/${WEBHOOK_HITS_INDEX}/_search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: { match_all: {} },
+      sort: [{ timestamp: 'desc' }],
+      size: limit,
+    }),
+  });
+
+  if (!response.ok) {
+    if (response.status === 404) return [];
+    const body = await response.text();
+    throw new Error(`OpenSearch search failed: ${response.status} ${body}`);
+  }
+
+  const data = await response.json();
+  return data.hits.hits.map((hit) => hit._source);
+}
+
+/**
+ * Indexes one real error reported by a connected external project (not
+ * DevPulse's own code) - the audit trail persists here regardless of
+ * whether an incident/blocker was also created for it.
+ */
+export async function indexErrorLog(errorLog) {
+  if (!isConfigured()) return null;
+
+  const response = await fetch(`${baseUrl()}/${ERROR_LOGS_INDEX}/_doc`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...errorLog, timestamp: errorLog.timestamp || new Date().toISOString() }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`OpenSearch index failed: ${response.status} ${body}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Most recent connected-project error logs, newest first.
+ */
+export async function recentErrorLogs({ limit = 20 } = {}) {
+  if (!isConfigured()) return [];
+
+  const response = await fetch(`${baseUrl()}/${ERROR_LOGS_INDEX}/_search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: { match_all: {} },
+      sort: [{ timestamp: 'desc' }],
+      size: limit,
+    }),
+  });
+
+  if (!response.ok) {
+    if (response.status === 404) return [];
+    const body = await response.text();
+    throw new Error(`OpenSearch search failed: ${response.status} ${body}`);
   }
 
   const data = await response.json();

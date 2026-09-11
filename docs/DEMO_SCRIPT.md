@@ -1,6 +1,7 @@
 # Demo Script
 
-~8-10 minutes, five short flows. Each one demonstrates a specific,
+~12-14 minutes, seven short flows (the seventh is optional, cut it if
+short on time). Each one demonstrates a specific,
 previously-broken-then-fixed capability, lead with that framing rather
 than presenting them as if they always just worked, since "found a real
 bug, reproduced it, fixed it, reverified" is a stronger FYP story than
@@ -80,6 +81,47 @@ Send: *"prod is completely down, this is a P1"*
 (`docs/LIVE_TEST_CHECKLIST.md`) has been run beforehand, a second phone
 visibly receives the escalation WhatsApp message live during the demo.
 (TC ref: INC-05)
+
+## 6. Automatic project-activity logging (~2 min)
+
+Open `<backend-url>/opensearch-dashboards/` in a browser tab prepared
+beforehand, showing the saved "DevPulse Activity" dashboard (commits
+over time, webhook hits by type). Alternatively/additionally, the
+lighter built-in status page at `<backend-url>/dashboard/`.
+
+**Say while presenting**: this was added per advisor feedback - activity
+logging shouldn't depend only on a developer remembering to report it
+over WhatsApp. Every real commit gets indexed automatically by CI on
+push, and every real WhatsApp message that just came in during this
+demo (steps 1-5) is *also* logged the same way, independent of anything
+the agent did with it. Point at the webhook-hits count/chart and note
+it reflects the actual messages just sent live.
+
+If time allows, send one more message now and refresh the dashboard to
+show it update in real time.
+
+## 7. Automatic error intake from a connected project (~1-2 min, optional)
+
+From a terminal (prepared beforehand), send a real POST simulating an
+external project's own error handler:
+```bash
+curl -X POST <backend-url>/logs/ingest-error \
+  -H "Content-Type: application/json" \
+  -H "x-log-ingest-secret: <LOG_INGEST_SECRET>" \
+  -d '{"project":"<real or plausible project name>","level":"critical","message":"...","stack":"..."}'
+```
+
+**Expect**: a real incident appears (check the dashboard or ask the
+agent "any recent errors?"), a real escalation WhatsApp message fires
+(same pipeline as step 5's P1), and a real Jira issue gets created (same
+pipeline as step 4).
+
+Say while waiting: this reuses `reportIncident`/`reportBlocker`
+directly - there's no separate "auto-escalation" logic to keep in sync
+with the human-reported path, an auto-detected P1 behaves identically to
+one a person typed into WhatsApp. Attribute the record to the dedicated
+`system-monitoring` account visible in the response, so it's clear this
+was never claimed to come from a real team member.
 
 ---
 

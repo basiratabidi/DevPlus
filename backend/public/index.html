@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DevPulse Status</title>
+<style>
+  body { font-family: -apple-system, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; padding: 24px; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #8a8f98; font-size: 13px; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: #171a21; border: 1px solid #2a2e37; border-radius: 8px; padding: 16px; }
+  .card h2 { font-size: 14px; margin: 0 0 8px; color: #8a8f98; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat { font-size: 28px; font-weight: 600; }
+  .ok { color: #4ade80; }
+  .down { color: #f87171; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #2a2e37; }
+  th { color: #8a8f98; font-weight: 500; }
+  .mono { font-family: ui-monospace, monospace; font-size: 12px; color: #8a8f98; }
+  .empty { color: #8a8f98; font-size: 13px; padding: 12px 0; }
+  .refresh { font-size: 12px; color: #8a8f98; }
+</style>
+</head>
+<body>
+  <h1>DevPulse Status</h1>
+  <div class="sub">Live system activity - auto-refreshes every 10s. <span class="refresh" id="lastUpdated"></span></div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Backend</h2>
+      <div class="stat" id="backendStatus">checking...</div>
+    </div>
+    <div class="card">
+      <h2>Webhook hits (last 20)</h2>
+      <div class="stat" id="hitCount">-</div>
+    </div>
+    <div class="card">
+      <h2>Commits logged (last 20)</h2>
+      <div class="stat" id="commitCount">-</div>
+    </div>
+    <div class="card">
+      <h2>Connected-project errors (last 20)</h2>
+      <div class="stat" id="errorCount">-</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Recent webhook hits</h2>
+      <div id="hitsTable"></div>
+    </div>
+    <div class="card">
+      <h2>Recent commits (auto-logged by CI)</h2>
+      <div id="commitsTable"></div>
+    </div>
+    <div class="card">
+      <h2>Recent connected-project errors</h2>
+      <div id="errorsTable"></div>
+    </div>
+  </div>
+
+<script>
+async function refresh() {
+  try {
+    const health = await fetch('/health').then(r => r.text());
+    document.getElementById('backendStatus').innerHTML = health === 'ok'
+      ? '<span class="ok">up</span>' : '<span class="down">down</span>';
+  } catch {
+    document.getElementById('backendStatus').innerHTML = '<span class="down">unreachable</span>';
+  }
+
+  try {
+    const { hits } = await fetch('/logs/recent-webhook-hits').then(r => r.json());
+    document.getElementById('hitCount').textContent = hits.length;
+    document.getElementById('hitsTable').innerHTML = hits.length
+      ? renderTable(hits, ['timestamp', 'from', 'messageType'])
+      : '<div class="empty">No webhook hits yet.</div>';
+  } catch {
+    document.getElementById('hitsTable').innerHTML = '<div class="empty">Could not load (OpenSearch reachable?).</div>';
+  }
+
+  try {
+    const { commits } = await fetch('/logs/recent-commits').then(r => r.json());
+    document.getElementById('commitCount').textContent = commits.length;
+    document.getElementById('commitsTable').innerHTML = commits.length
+      ? renderTable(commits.map(c => ({ ...c, sha: c.sha.slice(0, 7) })), ['sha', 'author', 'message'])
+      : '<div class="empty">No commits logged yet.</div>';
+  } catch {
+    document.getElementById('commitsTable').innerHTML = '<div class="empty">Could not load (OpenSearch reachable?).</div>';
+  }
+
+  try {
+    const { errors } = await fetch('/logs/recent-errors').then(r => r.json());
+    document.getElementById('errorCount').textContent = errors.length;
+    document.getElementById('errorsTable').innerHTML = errors.length
+      ? renderTable(errors, ['project', 'level', 'message'])
+      : '<div class="empty">No connected-project errors yet.</div>';
+  } catch {
+    document.getElementById('errorsTable').innerHTML = '<div class="empty">Could not load (OpenSearch reachable?).</div>';
+  }
+
+  document.getElementById('lastUpdated').textContent = 'updated ' + new Date().toLocaleTimeString();
+}
+
+function renderTable(rows, cols) {
+  const head = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+  const body = rows.map(r => '<tr>' + cols.map(c => `<td class="${c === 'sha' ? 'mono' : ''}">${escapeHtml(String(r[c] ?? ''))}</td>`).join('') + '</tr>').join('');
+  return `<table>${head}${body}</table>`;
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

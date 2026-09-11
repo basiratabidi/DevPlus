@@ -23,5 +23,31 @@ services:
     volumes:
       - opensearch_data:/usr/share/opensearch/data
 
+  # Visual dashboard (Kibana-equivalent) for browsing/searching the
+  # indexed commit logs in a browser instead of raw REST calls.
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.17.0
+    restart: unless-stopped
+    environment:
+      - 'OPENSEARCH_HOSTS=["http://opensearch:9200"]'
+      # Matches the engine's security being disabled above - local/demo
+      # only, never do this on a real internet-facing instance.
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+      # Served under the backend's own /opensearch-dashboards path (see
+      # index.js's proxy) so the whole thing reaches the outside world
+      # through the one ngrok tunnel already open on the backend - free
+      # ngrok accounts only allow one simultaneous tunnel.
+      # rewriteBasePath=false (not true): Express already strips the
+      # /opensearch-dashboards prefix before the proxy forwards the
+      # request (standard app.use(path, ...) behavior), so OSD must
+      # receive and serve plain, unprefixed paths itself - basePath is
+      # only used to generate correctly-prefixed links for the browser.
+      - SERVER_BASEPATH=/opensearch-dashboards
+      - SERVER_REWRITEBASEPATH=false
+    ports:
+      - "5601:5601"
+    depends_on:
+      - opensearch
+
 volumes:
   opensearch_data:

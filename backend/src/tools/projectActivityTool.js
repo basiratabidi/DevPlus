@@ -1,4 +1,4 @@
-import { searchCommitLogs } from '../services/opensearch/client.js';
+import { searchCommitLogs, recentErrorLogs } from '../services/opensearch/client.js';
 
 /**
  * Lets the agent answer "what's changed in the codebase recently?"
@@ -9,4 +9,14 @@ import { searchCommitLogs } from '../services/opensearch/client.js';
 export async function queryProjectActivity({ query = null, limit = 10 } = {}) {
   const commits = await searchCommitLogs({ query, limit });
   return { commits, count: commits.length };
+}
+
+/**
+ * Recent errors auto-detected from connected external projects (not
+ * DevPulse's own code) - see errorIngestTool.js. Lets the agent answer
+ * "any recent errors from [project]?" from real data.
+ */
+export async function queryRecentErrors({ limit = 10 } = {}) {
+  const errors = await recentErrorLogs({ limit });
+  return { errors, count: errors.length };
 }

@@ -115,6 +115,49 @@ itself still needs the `BACKEND_URL`/`LOG_INGEST_SECRET` GitHub repo
 secrets set (see `docs/DEPLOYMENT.md` §4a) - until then the CI job logs
 what it would have sent and exits cleanly rather than failing the build.
 
+Extended further: every real inbound WhatsApp message is now also
+indexed (`devpulse-webhook-hits`), independent of commit logging -
+**verified with a real message**, not just backfilled test data (two
+genuine hits landed and were confirmed via the read endpoint after
+sending "hi" from WhatsApp). A minimal built-in status page
+(`/dashboard`) and the full **OpenSearch Dashboards** UI (self-hosted,
+reverse-proxied through the backend at `/opensearch-dashboards` so it
+shares the one ngrok tunnel rather than needing a second) both went in
+on top of this. The proxy needed a real fix along the way (a
+`SERVER_BASEPATH`/`SERVER_REWRITEBASEPATH` mismatch that produced 404s
+on every proxied request) - fixed, and now **confirmed working against
+the actual running dev instance** (not just the earlier isolated test):
+reached live through the real ngrok tunnel at
+`/opensearch-dashboards/app/home#/`, publicly, not just on localhost.
+
+### Automatic error intake from connected external projects
+A distinct capability from the above: this is for real errors from a
+**team's own external project** (not DevPulse's own code), POSTed to
+`POST /logs/ingest-error` from that project's own error-handler/CI.
+Deliberately reuses `reportIncident`/`reportBlocker` directly rather
+than a separate auto-escalation path, so an auto-detected P1 gets
+identical escalation + Jira behavior to a human-reported one, with no
+risk of the two paths drifting apart. A dedicated, auto-created system
+user (`system-monitoring`) owns these records so they're never
+misattributed to a real team member; a repeated identical error
+refreshes timing instead of duplicating, same principle as the agent's
+own dedup flow. Readable back via a new `queryRecentErrors` agent tool
+and a third panel on the status dashboard.
+
+**Verified end-to-end with a real synthetic error, not just code
+review**: POSTed a real "critical" error for a fictitious "TestApp"
+project and confirmed all of the following actually happened - a real
+incident record created (`P1` severity), a real escalation WhatsApp
+message sent (confirmed via the `escalation_events` row, `notified_contact`
+correctly resolved to the configured number), and a real Jira issue
+created (`SCRUM-14`). Also verified a second, distinct low-severity
+error correctly became a blocker instead, with no escalation (matching
+the existing rule that only high-severity blockers escalate
+immediately) and its own real Jira issue. All synthetic test artifacts
+(the incident row, the blocker row, both Jira issues) were deleted
+afterward - the "TestApp" data was a deliberate one-off verification,
+not left behind as fake demo data.
+
 ---
 
 ## Genuinely still open
@@ -130,10 +173,11 @@ what it would have sent and exits cleanly rather than failing the build.
   constraint, needs a second real device.
 - **Deployment to a persistent host**, **decided**: staying local +
   ngrok for the demo rather than standing up and hardening a new host
-  this close to the presentation (see `docs/DEPLOYMENT.md` section 0
-  for the reasoning and the risk it introduces, free ngrok's URL
-  rotates on restart unless a static domain is claimed, which that
-  section walks through).
+  this close to the presentation (see `docs/DEPLOYMENT.md` section 0).
+  A static ngrok domain would remove the URL-rotation risk, but turned
+  out to require a paid plan on this account, not free as first assumed
+  - accepting the rotating URL and relying on the pre-demo checklist
+  instead.
 - **Credential rotation**, Groq, WhatsApp access token, and Jira API
   token are all rotated and directly verified (each against a real API
   call on the new credential, not just assumed from a restart). The
@@ -148,10 +192,20 @@ what it would have sent and exits cleanly rather than failing the build.
 - **CI → backend wiring for commit-log ingestion**, the code path is
   built and verified end-to-end locally, but the actual GitHub Actions
   job has never fired against a real live backend yet - needs
-  `BACKEND_URL`/`LOG_INGEST_SECRET` set as GitHub repo secrets, which in
-  turn needs the static ngrok domain from `docs/DEPLOYMENT.md` §0 to be
-  claimed first (otherwise `BACKEND_URL` would go stale on the next
-  ngrok restart).
+  `BACKEND_URL`/`LOG_INGEST_SECRET` set as GitHub repo secrets. A static
+  ngrok domain would make `BACKEND_URL` stable, but **update**: a custom
+  -named free static domain turned out to require a paid ngrok plan on
+  this account (every name typed in the dashboard showed "Requires
+  Upgrade") - `docs/DEPLOYMENT.md` §0's original claim that this was
+  free was wrong for this account tier, corrected here. Until this is
+  set up, stick with the pre-demo checklist in §0 (re-verify and
+  re-point the webhook manually before demos) rather than relying on a
+  stable `BACKEND_URL`.
+- **Connected-project error intake**, code-level flow verified
+  end-to-end with a real synthetic error (see above). No genuine
+  external project has been wired up to call
+  `/logs/ingest-error` yet - this was verified by directly POSTing to
+  it, not by an actual connected project's real error-handler.
 
 ---
 
@@ -160,9 +214,8 @@ what it would have sent and exits cleanly rather than failing the build.
 Nearly everything functional is done, this is now mostly a
 rehearsal/polish list, not a build list.
 
-1. **This week:** rotate credentials (`docs/CREDENTIAL_ROTATION.md`);
-   claim a static ngrok domain and re-point Meta's webhook once
-   (`docs/DEPLOYMENT.md` section 0) so it stops being a restart risk.
+1. **This week:** rotate credentials (`docs/CREDENTIAL_ROTATION.md`,
+   mostly done, App Secret is the one holdout).
 2. **Next:** run `docs/LIVE_TEST_CHECKLIST.md` (needs a second phone),
    escalation live-notify and a multi-user pass.
 3. **Final week:** slides (demo script and talking points are already

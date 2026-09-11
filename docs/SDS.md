@@ -25,12 +25,19 @@ graph TB
         Logs["routes/logs.js"]
         JiraSvc["services/jira/"]
         OSClient["services/opensearch/"]
+        ErrIngest["tools/errorIngestTool.js"]
+        Proxy["/opensearch-dashboards<br/>(reverse proxy, http-proxy-middleware)"]
+        Dash["/dashboard<br/>(static status page)"]
         Webhook --> LangTag --> Agent
+        Webhook -->|fire-and-forget| OSClient
         Agent --> Tools
         Tools --> JiraSvc
         Cron --> Tools
         Logs --> OSClient
-        Agent -->|queryProjectActivity| OSClient
+        Logs --> ErrIngest
+        ErrIngest --> Tools
+        Agent -->|queryProjectActivity /<br/>queryRecentErrors| OSClient
+        Dash -->|reads| Logs
     end
 
     subgraph AISvc["ai-services/ (Python, FastAPI)"]
@@ -47,8 +54,13 @@ graph TB
     Tools <--> DB[("PostgreSQL<br/>(Neon)")]
     JiraSvc <--> Jira["Jira Cloud API"]
     n8n["n8n<br/>(scheduled sweeps)"] -->|polls| Cron
-    OSClient <--> OpenSearch[("OpenSearch<br/>(self-hosted, commit logs)")]
+    OSClient <--> OpenSearch[("OpenSearch<br/>(self-hosted, commit + webhook + error logs)")]
     CI["GitHub Actions CI<br/>(on every push)"] -->|POST commits| Logs
+    ExtProject["Connected external project<br/>(its own CI/error-handler)"] -->|POST error| Logs
+    Proxy <--> OSD["OpenSearch Dashboards<br/>(self-hosted, Discover/Visualize/Dashboard)"]
+    OSD <--> OpenSearch
+    Dev["Developer/advisor<br/>(browser)"] -->|one ngrok tunnel| Proxy
+    Dev -->|same tunnel| Dash
 
     Backend -->|reply| Meta -->|text / voice| User
 ```
@@ -112,15 +124,51 @@ blocked by Jira being unreachable or misconfigured.
 ### 2.8 Automatic project-activity logging (`routes/logs.js`, `services/opensearch/`, `tools/projectActivityTool.js`)
 Added per advisor feedback that activity logging shouldn't depend only
 on a developer manually reporting it over WhatsApp - the system should
-also be able to inspect the project's own codebase directly. On every
-push, a GitHub Actions job (`log-commit-activity`) builds a commit-log
-payload from the push event itself (no git history access needed in the
-runner) and POSTs it to `/logs/ingest-commits`, a secret-authenticated
-endpoint mirroring the `/cron/*` pattern. Commits are indexed into a
-self-hosted OpenSearch instance. The agent can then read this back via
-the `queryProjectActivity` tool, e.g. answering "what's changed in the
-codebase recently?" from real commit data rather than anything logged
-by a person.
+also be able to inspect the project's own codebase and its own runtime
+activity directly. Two independent activity streams feed the same
+OpenSearch store:
+- **Commits**: on every push, a GitHub Actions job
+  (`log-commit-activity`) builds a commit-log payload from the push
+  event itself (no git history access needed in the runner) and POSTs
+  it to `/logs/ingest-commits`, a secret-authenticated endpoint
+  mirroring the `/cron/*` pattern.
+- **Webhook activity**: every inbound WhatsApp message is indexed
+  (fire-and-forget, from `webhook.js`) as it's received, independent of
+  whatever the agent does with it.
+
+The agent can read commit activity back via the `queryProjectActivity`
+tool, e.g. answering "what's changed in the codebase recently?" from
+real commit data rather than anything logged by a person. Both streams
+are also readable by two small GET endpoints (`/logs/recent-commits`,
+`/logs/recent-webhook-hits`) that back a built-in status page.
+
+### 2.9 Status dashboard and OpenSearch Dashboards proxy
+A minimal static page (`backend/public/`, served at `/dashboard`) polls
+three GET endpoints (recent commits, webhook hits, connected-project
+errors) every 10s and renders recent activity - no build step, no
+framework, matching the project's dependency-light style elsewhere.
+Full **OpenSearch Dashboards** (Discover/Visualize/Dashboard) also runs
+self-hosted (`backend/docker-compose.yml`) and is reverse-proxied
+through the backend itself at `/opensearch-dashboards`
+(`http-proxy-middleware`, mounted before `express.json()` so it sees the
+untouched request stream) rather than exposed on a separate port/tunnel
+- free ngrok accounts allow only one simultaneous tunnel, so proxying
+keeps the webhook, status page, and full OpenSearch Dashboards UI all
+reachable through the one tunnel already open for WhatsApp.
+
+### 2.10 Automatic error intake from connected external projects (`tools/errorIngestTool.js`)
+Distinct from §2.8's commit/webhook logging: this ingests real errors
+from a **connected external project** (a team's own app, not DevPulse's
+own code) via `POST /logs/ingest-error`. Deliberately reuses
+`reportIncident`/`reportBlocker` directly rather than reimplementing
+their logic, so an auto-detected P1 gets identical escalation and Jira
+behavior to a human-reported one. Auto-detected errors are attributed
+to a dedicated, auto-created system user (`system-monitoring`) so they
+never get misattributed to a real team member, and a repeated identical
+error refreshes the existing open record's timing instead of creating a
+duplicate - the same principle as the agent's own duplicate-incident
+flow, applied without a human to ask for confirmation. Readable back via
+the agent's `queryRecentErrors` tool and the status dashboard.
 
 ## 3. Data Design (Entity-Relationship Diagram)
 
@@ -361,6 +409,12 @@ stateDiagram-v2
 | `/cron/missed-checkins` | POST | Missed-checkin sweep (n8n) | Shared secret header |
 | `/cron/stale-blockers` | POST | Stale-blocker escalation (n8n) | Shared secret header |
 | `/logs/ingest-commits` | POST | Commit-log ingestion (CI, on every push) | Shared secret header |
+| `/logs/ingest-error` | POST | Error intake from a connected external project | Shared secret header |
+| `/logs/recent-commits` | GET | Recent commit logs (backs the status page) | None (read-only, local/demo) |
+| `/logs/recent-webhook-hits` | GET | Recent webhook activity (backs the status page) | None (read-only, local/demo) |
+| `/logs/recent-errors` | GET | Recent connected-project errors (backs the status page) | None (read-only, local/demo) |
+| `/dashboard` | GET (static) | Built-in status page | None |
+| `/opensearch-dashboards/*` | ALL (proxied) | Full OpenSearch Dashboards UI | Whatever OpenSearch Dashboards itself enforces (disabled for local/demo) |
 | `/health` | GET | Liveness check | None |
 | `ai-services:/transcribe` | POST | Voice-to-text | Internal network only |
 | `ai-services:/speak` | POST | Text-to-voice | Internal network only |
@@ -374,6 +428,9 @@ stateDiagram-v2
 | Best-effort, non-blocking Jira integration | Jira must never become a hard dependency for DevPulse's own record-keeping |
 | Commit activity logged automatically via CI, not by a developer | Advisor feedback: activity logging shouldn't depend solely on a person remembering to report it - having CI inspect and log real commits on every push removes that dependency entirely |
 | OpenSearch instead of Elasticsearch for the log store | Same query/dashboard experience, but actually open-source (Apache 2.0) - Elasticsearch itself moved to a source-available license in 2021, which matters for an honestly-labeled "open source" claim in this documentation |
+| OpenSearch Dashboards reverse-proxied through the backend instead of exposed on its own tunnel | Free ngrok accounts allow only one simultaneous tunnel; proxying keeps everything (WhatsApp webhook, status page, full Dashboards UI) reachable through the single tunnel already open, rather than needing a paid ngrok plan or a second public host |
+| Connected-project error intake reuses `reportIncident`/`reportBlocker` directly, instead of a separate auto-escalation path | An auto-detected P1 must behave identically to a human-reported P1 (same escalation, same Jira creation) - reusing the exact same functions guarantees this rather than risking the two paths drifting apart |
+| A dedicated system user (`system-monitoring`) for auto-detected errors, rather than attributing them to a real team member | Auto-detected incidents/blockers need a `user_id` (the existing schema ties every record to a reporter), but attributing automation to a real person would be misleading in the data - a clearly-labeled system account keeps the distinction honest |
 | Self-hosted TTS, hosted STT/LLM | A local LLM was evaluated for a sub-task and measured too slow (~2.4 tok/s) on available hardware; STT/agent reasoning remain on Groq's hosted, higher-throughput API, while the smaller VITS TTS models run locally at acceptable cost |
 | Escalation messages built from a human-readable summary, not raw internal ids | Found via live testing: the original message format (`Escalation triggered (P1_incident) for user 11...`) exposed internal ids to a real recipient with no context, and could arrive interleaved into an unrelated WhatsApp conversation that person was having with the bot. `evaluateEscalation` now takes an explicit `summary` string from the caller and includes the reporter's name, instead of formatting from ids alone. |
 | Immediate blocker escalation wired at the call site, not left to the sweep | `maybeEscalateBlocker` existed but was never actually invoked from `reportBlocker` - found via checking real database state during live testing, not assumed from the function's existence. High-severity blockers now escalate immediately, matching the same pattern `reportIncident` already used for P1. |

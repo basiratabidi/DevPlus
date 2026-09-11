@@ -20,9 +20,15 @@ fixed value you set once in the Meta App dashboard, an ngrok restart
 between now and the demo silently breaks inbound messages until someone
 notices and re-points it.
 
-**Fix, claim a free static domain** (ngrok's free tier includes one):
-1. In the ngrok dashboard (Cloud Edge → Domains), claim a free static
-   domain, something like `your-name.ngrok-free.app`.
+**Attempted fix, claim a static domain - update: not free on this
+account.** ngrok's dashboard (Domains → New Domain) was tried directly:
+every custom name typed in showed "Requires Upgrade," on this account
+tier a chosen static domain needs a paid plan, not just a free-tier
+perk as originally assumed here. Given the timeline, paying for this
+wasn't worth it, so the plan reverts to: accept the rotating URL and
+lean on the pre-demo checklist below instead. If you do upgrade later,
+the steps would be:
+1. ngrok dashboard → Domains → claim a static domain.
 2. Start the tunnel with `ngrok http --domain=your-name.ngrok-free.app 3000`
    instead of the plain `ngrok http 3000`.
 3. Set Meta's webhook Callback URL to that fixed domain **once**, it
@@ -46,7 +52,11 @@ curl -s https://<that-url>/health   # should return "ok"
   local, but the TTS VITS models, `facebook/mms-tts-eng` and
   `-urd-script_arabic`, load locally and need real RAM). 1GB-class
   instances (e.g. AWS/GCP free-tier micro instances) are **not** enough
-  and will likely OOM.
+  and will likely OOM. OpenSearch + OpenSearch Dashboards add real
+  additional memory pressure on top of this (capped to 512MB heap for
+  the OpenSearch engine itself via `OPENSEARCH_JAVA_OPTS`, but the
+  Dashboards container needs its own separate headroom) - budget more
+  than the bare minimum above if running everything on one host.
 - **A public domain with HTTPS.** Meta's WhatsApp Cloud API requires an
   HTTPS webhook URL, plain HTTP or a bare IP won't work. If using
   Dokploy, it provisions Let's Encrypt certs automatically; otherwise set
@@ -90,6 +100,8 @@ psql "$DATABASE_URL" -f backend/schema.sql
 |---|---|
 | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_PROJECT_KEY` | Jira auto-issue-creation. Unset = feature no-ops cleanly, everything else still works. |
 | `JIRA_INCIDENT_ISSUE_TYPE`, `JIRA_BLOCKER_ISSUE_TYPE` | Must match issue type names that actually exist in your Jira project (check via Jira's "Create issue" dropdown, defaults of "Bug"/"Task" are NOT guaranteed to exist, confirmed this broke on a real project during testing) |
+| `OPENSEARCH_DASHBOARDS_URL` | Where the backend's reverse proxy forwards `/opensearch-dashboards` requests. Defaults to `http://localhost:5601` if unset, only needed if you move OpenSearch Dashboards to a different host/port. |
+| `ERROR_ESCALATION_CONTACT_NUMBER` | Real WhatsApp number to notify when an auto-detected error from a connected external project is P1/high-severity. Unset = errors still get logged/incident-created, just with nothing to escalate to. See §4b. |
 
 ### `backend/.env` (not used, safe to omit)
 `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE_NAME`,
@@ -104,7 +116,7 @@ uses Meta's Cloud API directly and never reads these.
 ## 4. Deploy sequence
 
 1. **ai-services**: `cd ai-services && docker compose up -d ai-services` (explicitly name the service to skip `urdu-llm`)
-2. **OpenSearch**: `cd backend && docker compose up -d opensearch` - see §4a for what this is for
+2. **OpenSearch + OpenSearch Dashboards**: `cd backend && docker compose up -d` (brings up both `opensearch` and `opensearch-dashboards`) - see §4a for what this is for
 3. **n8n**: `cd backend/n8n && docker compose up -d`
 4. **Backend**: either `npm install && npm run dev` directly on the host, or containerize it (no existing Dockerfile for it yet, would need to be added if you want it in Docker too)
 5. **Import n8n workflows**: the 3 JSON files in `backend/n8n/` (reminders, missed-checkins, stale-blockers), import via n8n's UI, then activate each
@@ -129,10 +141,42 @@ log that automatically. Implementation:
   the runner), and POSTs it to the backend.
 - **Ingestion**: `POST /logs/ingest-commits` (`routes/logs.js`), secret
   -authenticated the same way `/cron/*` is, indexes each commit into
-  OpenSearch.
-- **Reading it back**: the agent's `queryProjectActivity` tool
-  (`tools/projectActivityTool.js`) lets a user ask "what's changed in
-  the codebase recently?" and get a real, commit-backed answer.
+  OpenSearch (index `devpulse-commit-logs`).
+- **Webhook activity is logged the same way**: every inbound WhatsApp
+  message indexes a document into `devpulse-webhook-hits`
+  (fire-and-forget from `webhook.js`, never blocks the actual reply).
+- **Reading it back**:
+  - The agent's `queryProjectActivity` tool
+    (`tools/projectActivityTool.js`) lets a user ask "what's changed in
+    the codebase recently?" and get a real, commit-backed answer.
+  - A small built-in status page at `/dashboard/` (`backend/public/`)
+    shows recent webhook hits and recent commits, auto-refreshing.
+  - Full **OpenSearch Dashboards** (Discover, Visualize, saved
+    Dashboards) - see below.
+
+### OpenSearch Dashboards (visual browsing/charts)
+
+Also runs via `backend/docker-compose.yml` (`opensearch-dashboards`
+service). Reverse-proxied through the backend itself at
+`/opensearch-dashboards`, rather than exposed on its own port/tunnel -
+free ngrok accounts only allow **one** simultaneous tunnel, so this
+keeps everything (WhatsApp webhook, status page, and the full OpenSearch
+Dashboards UI) reachable through the single existing tunnel.
+
+This needed two settings to actually work together correctly:
+- `SERVER_BASEPATH=/opensearch-dashboards` on the `opensearch-dashboards`
+  container, so it generates correctly-prefixed links for the browser.
+- `SERVER_REWRITEBASEPATH=false` (not `true`) - Express's
+  `app.use('/opensearch-dashboards', proxy)` already strips that prefix
+  before forwarding, so OpenSearch Dashboards itself must receive and
+  serve plain, unprefixed paths. Setting this to `true` was tried first
+  and produced 404s on every proxied request - both settings needing to
+  point the same direction is a real, non-obvious gotcha worth knowing
+  before touching this again.
+- The proxy itself: `http-proxy-middleware`, mounted in `src/index.js`
+  **before** `express.json()` (the proxy needs the untouched request
+  stream; a body-parser consuming it first would break OSD's own
+  POST/PUT calls, e.g. saving a visualization).
 
 **To wire up the CI side**, add two repository secrets (GitHub repo →
 Settings → Secrets and variables → Actions):
@@ -146,6 +190,43 @@ and exits cleanly rather than failing the build (`continue-on-error` is
 also set as a second layer of protection - this must never be able to
 break CI, matching the project's established best-effort pattern for
 external integrations like Jira).
+
+## 4b. Automatic error intake from connected external projects
+
+Distinct from §4a: this is for real errors happening in **someone
+else's project** (a team's own app/service), not DevPulse's own code.
+A connected project's own error-handler or CI POSTs to:
+
+```
+POST /logs/ingest-error
+x-log-ingest-secret: <LOG_INGEST_SECRET>
+Content-Type: application/json
+
+{ "project": "MyApp", "level": "critical", "message": "...", "stack": "...", "source": "..." }
+```
+
+- `level` maps to severity: `critical`/`fatal`/`error` become an
+  incident (`P1`/`P2`), everything else becomes a blocker
+  (`low`/`medium`/`high`, `error` → high).
+- This reuses `reportIncident`/`reportBlocker` **directly** - an
+  auto-detected P1 gets the exact same immediate escalation + Jira
+  creation a human-reported P1 would, no separate logic to keep in sync.
+- A repeated identical error (same `project` + `message`, still open)
+  refreshes the existing record's timing instead of creating a
+  duplicate, the same dedup principle as the agent's own duplicate
+  -incident confirmation flow, just without a human to ask.
+- All auto-detected errors are attributed to a dedicated system user
+  (`whatsapp_number: 'system-monitoring'`, auto-created on first use) so
+  they never get misattributed to a real team member.
+- Set `ERROR_ESCALATION_CONTACT_NUMBER` in `backend/.env` to a real
+  WhatsApp number if you want auto-detected P1s/high-severity blockers
+  to actually notify someone - without it, errors still get
+  logged/incident-created, just with no one to escalate to.
+- Verified end-to-end with a real synthetic error: real incident
+  created, real escalation WhatsApp message sent, real Jira issue
+  created (`SCRUM-14`, since deleted along with the test incident/
+  blocker rows - this was a deliberate one-off verification, not left
+  as demo data).
 
 ## 5. Post-deploy verification
 
@@ -177,3 +258,14 @@ number, and confirm both get replies.
   it (found the first time OpenSearch was started for this project).
   Already set in `backend/docker-compose.yml`; only matters if you
   recreate that file from scratch.
+- **`SERVER_BASEPATH` and `SERVER_REWRITEBASEPATH` must point the same
+  direction** when reverse-proxying OpenSearch Dashboards through
+  Express - see §4a for the full explanation; getting this backwards
+  produces 404s on every proxied request with no obviously-related error
+  message.
+- **`node --watch` doesn't reliably pick up changes to `src/index.js`
+  itself, or a newly-installed dependency**, even though it correctly
+  reloads on changes to files it already imports. Confirmed repeatedly
+  during development - after editing `index.js` or running `npm
+  install`, fully stop (`Ctrl+C`) and restart `npm run dev` rather than
+  trusting the auto-reload for those two specific cases.
