@@ -2,6 +2,41 @@
 
 Everything needed to take DevPulse from local/ngrok to a persistent host.
 
+## 0. Current decision: local + ngrok for the demo
+
+Deploying to a persistent host was evaluated and deliberately deferred —
+DigitalOcean's student credit turned out unavailable, Oracle Cloud's
+card verification failed, and Azure's $100 credit remained unused by
+choice: for a scoped live demo, a stable local+ngrok setup is lower-risk
+than standing up and hardening a new host this close to the
+presentation. Sections 1-6 below are for whenever real deployment is
+picked back up; this section covers making the local setup demo-safe.
+
+**The risk with plain `ngrok http 3000`**: the free tier assigns a new
+random subdomain every restart (confirmed — current session is
+`https://blend-recital-splatter.ngrok-free.dev`, which will be different
+next time ngrok is relaunched). Since Meta's webhook Callback URL is a
+fixed value you set once in the Meta App dashboard, an ngrok restart
+between now and the demo silently breaks inbound messages until someone
+notices and re-points it.
+
+**Fix — claim a free static domain** (ngrok's free tier includes one):
+1. In the ngrok dashboard (Cloud Edge → Domains), claim a free static
+   domain — something like `your-name.ngrok-free.app`.
+2. Start the tunnel with `ngrok http --domain=your-name.ngrok-free.app 3000`
+   instead of the plain `ngrok http 3000`.
+3. Set Meta's webhook Callback URL to that fixed domain **once** — it
+   then survives every ngrok/backend restart between now and the demo.
+
+**Pre-demo checklist (run this the morning of, and once the night
+before):**
+```bash
+curl -s http://127.0.0.1:4040/api/tunnels | python3 -c \
+  "import json,sys; print(json.load(sys.stdin)['tunnels'][0]['public_url'])"
+# Confirm this matches the Callback URL in Meta App dashboard -> WhatsApp -> Configuration
+curl -s https://<that-url>/health   # should return "ok"
+```
+
 ## 1. Server requirements
 
 - **Docker + Docker Compose** (for `ai-services` and `n8n`)

@@ -100,45 +100,42 @@ check, and the unit test suite on every push.
 
 - **Escalation contact live-notify with a real second number** — the
   code path sends a real WhatsApp message, but this hasn't been
-  confirmed against an actual second WhatsApp number receiving it
-  (only exercised with `notified: false`/no-contact-configured cases so
-  far, as far as this session has verified).
-- **Multi-user testing** — all testing to date has been single-user;
-  behavior with 2+ distinct WhatsApp numbers interacting concurrently
-  hasn't been confirmed. Disclosed as a known limitation in
-  `docs/PROPOSAL.md`.
-- **Deployment to a persistent host** — explicitly paused earlier in
-  this project; still running locally. This is the one remaining item
-  from the original "task 4" list (Jira, dedup, and scheduledFor — the
-  other three — are all done).
-- **Credential rotation** — a real Groq API key, WhatsApp access token/
-  app secret, and Jira API token have all been pasted in plaintext into
-  chat sessions during development. `.env` itself is gitignored and was
-  never committed, but the values were still exposed in conversation
-  history and should be rotated before any public demo or handoff.
-- **Presentation materials** — `docs/PROPOSAL.md`, `docs/SRS.md`,
-  `docs/SDS.md` (with Mermaid architecture/ER/sequence diagrams), and
-  `docs/TEST_CASES.md` now exist and cover the written-documentation
-  side. Slides and a rehearsed demo script do not exist yet.
+  confirmed against an actual second WhatsApp number receiving it.
+  Step-by-step in `docs/LIVE_TEST_CHECKLIST.md` section A — needs you to
+  actually run it with a second phone; not something that can be
+  verified without one.
+- **Multi-user testing** — all testing to date has been single-user.
+  Step-by-step in `docs/LIVE_TEST_CHECKLIST.md` section B — same
+  constraint, needs a second real device.
+- **Deployment to a persistent host** — **decided**: staying local +
+  ngrok for the demo rather than standing up and hardening a new host
+  this close to the presentation (see `docs/DEPLOYMENT.md` section 0
+  for the reasoning and the risk it introduces — free ngrok's URL
+  rotates on restart unless a static domain is claimed, which that
+  section walks through).
+- **Credential rotation** — still pending, requires you to act in three
+  dashboards (Groq, Meta, Jira) since none of that can be done from
+  here. Exact steps in `docs/CREDENTIAL_ROTATION.md`.
+- **Presentation materials** — `docs/DEMO_SCRIPT.md` now exists,
+  grounded in real verified test cases from `docs/TESTING.md` (not
+  invented dialogue) — five flows: text logging, Urdu voice, duplicate
+  detection, Jira mirroring, P1 escalation. Slides still don't exist.
 
 ---
 
 ## Recommended order for remaining 16 days
 
 Nearly everything functional is done — this is now mostly a
-deployment/polish/rehearsal list, not a build list.
+rehearsal/polish list, not a build list.
 
-1. **This week:** decide on and execute deployment to a persistent host
-   (or explicitly decide to demo locally instead — either is fine, but
-   should be a decision, not a default by inaction), rotate the
-   credentials that were pasted in plaintext during development.
-2. **Next:** confirm escalation contact live-notify with a real second
-   WhatsApp number; if time allows, a short multi-user pass (2 numbers
-   interacting concurrently).
-3. **Final week:** slides + demo script (written docs are already done),
-   rehearsal covering: a text flow, a voice flow in Urdu, a duplicate-
-   incident confirmation, and a Jira-mirrored incident — these four
-   demonstrate the project's actual differentiators.
+1. **This week:** rotate credentials (`docs/CREDENTIAL_ROTATION.md`);
+   claim a static ngrok domain and re-point Meta's webhook once
+   (`docs/DEPLOYMENT.md` section 0) so it stops being a restart risk.
+2. **Next:** run `docs/LIVE_TEST_CHECKLIST.md` (needs a second phone) —
+   escalation live-notify and a multi-user pass.
+3. **Final week:** slides (demo script and talking points are already
+   written in `docs/DEMO_SCRIPT.md`), then rehearse the five flows in
+   that script end to end at least once before the actual presentation.
 
 ---
 
@@ -153,8 +150,9 @@ deployment/polish/rehearsal list, not a build list.
   self-hosted too.
 - Groq's free tier caps at 200,000 tokens/day, organization-wide — real
   testing during this project has hit that cap more than once.
-- Currently running locally, not on a persistent server — fine for a
-  scoped demo, would need real deployment for production use.
+- Running locally + ngrok, not on a persistent server — a deliberate
+  choice for a scoped demo (see `docs/DEPLOYMENT.md` section 0), would
+  need real deployment for production use.
 - WhatsApp Cloud API test number is capped at 5 verified recipients —
   sufficient for a demo, not a real team rollout without completing
   Meta's production number setup.
