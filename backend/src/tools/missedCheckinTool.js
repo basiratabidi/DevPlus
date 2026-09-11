@@ -24,6 +24,8 @@ export async function runMissedCheckinSweep() {
       sourceType: 'missed_checkin',
       sourceId: null,
       ruleTriggered: 'missed_standup',
+      summary: 'Missed standup check-in',
+      relation: 'for',
     });
 
     await markMissedCheckinAlerted({ userId: person.user_id });
