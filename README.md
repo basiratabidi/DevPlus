@@ -30,11 +30,16 @@ build, applied to a different case study.
 - **PDF reports**: activity summaries and open-blockers lists, generated
   and sent as WhatsApp documents.
 - **Reminders & escalation**: standup/deployment reminders, and
-  automatic escalation to a team lead for P1 incidents or blockers open
-  past a threshold, run via n8n cron workflows hitting `/cron/*` routes,
-  with de-dup guards so the same event doesn't re-fire on every sweep.
+  automatic escalation to a configured contact for P1 incidents or
+  blockers open past a threshold, run via n8n cron workflows hitting
+  `/cron/*` routes, with de-dup guards so the same event doesn't re-fire
+  on every sweep.
 - **Onboarding**: new team members register themselves conversationally
   via WhatsApp.
+- **Automatic project-activity logging**: a CI job indexes every real
+  commit into a self-hosted OpenSearch instance on push, no developer
+  has to report it, and the agent can read it back (`queryProjectActivity`)
+  to answer "what's changed in the codebase recently?".
 
 ## Architecture
 
@@ -47,9 +52,12 @@ WhatsApp (Meta Cloud API v25.0)
         |-- agent/languageTag.js  deterministic EN/UR/MIXED classifier for voice input
         |-- tools/*            DB-backed tools the agent can call
         |-- services/jira/     Jira issue auto-creation
+        |-- services/opensearch/  commit-log store client
         |-- routes/cron.js     endpoints polled by n8n (reminders, missed-checkins, stale-blockers)
+        |-- routes/logs.js     endpoint hit by CI on every push (commit logging)
         |
         |--> ai-services/  (Python, FastAPI)        |--> PostgreSQL (Neon)
+        |                                            |--> OpenSearch (self-hosted, commit logs)
               |-- transcribe.py    Groq Whisper STT
               |-- transliterate.py Roman Urdu -> Urdu script (Groq LLM)
               |-- text_to_speech.py  self-hosted VITS TTS
@@ -91,7 +99,10 @@ webhook callback URL.
 See `backend/.env.example` for the full list. Required for core
 functionality: `DATABASE_URL`, `GROQ_API_KEY`, `WHATSAPP_PHONE_NUMBER_ID`,
 `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`,
-`CRON_SECRET`. Optional: `JIRA_*` (Jira integration is a no-op if unset).
+`CRON_SECRET`. Optional: `JIRA_*` (Jira integration is a no-op if unset),
+`OPENSEARCH_URL` + `LOG_INGEST_SECRET` (without these, commit-log
+ingestion won't run and `queryProjectActivity` returns no results -
+everything else keeps working, see `docs/DEPLOYMENT.md` §4a).
 
 ## Known limitations
 
@@ -124,8 +135,12 @@ backend/
       whatsapp/       webhook, media download, message/audio/document sending
       aiservices/     bridge to the Python ai-services
       jira/           Jira issue creation
+      opensearch/     commit-log store client
     routes/cron.js    endpoints polled by n8n
+    routes/logs.js    endpoint hit by CI on every push
     db/pool.js        Postgres connection
+  scripts/logPushedCommits.js  manual/local commit-log ingestion (same path CI uses)
+  docker-compose.yml  self-hosted OpenSearch
   schema.sql
   prompts/system_prompt.txt
 

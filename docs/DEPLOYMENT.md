@@ -82,6 +82,8 @@ psql "$DATABASE_URL" -f backend/schema.sql
 | `CRON_SECRET` | Any random string, shared between backend and n8n |
 | `AI_SERVICE_URL` | URL the backend uses to reach `ai-services` (e.g. `http://ai-services:8001` if both are on the same Docker network, or a public URL if separate hosts) |
 | `PORT` | Backend's listen port (3000) |
+| `OPENSEARCH_URL` | Where the self-hosted OpenSearch instance listens (e.g. `http://localhost:9200`) - see §4a. |
+| `LOG_INGEST_SECRET` | Shared secret CI uses to authenticate commit-log ingestion, same pattern as `CRON_SECRET`. |
 
 ### `backend/.env` (optional)
 | Variable | Purpose |
@@ -102,10 +104,48 @@ uses Meta's Cloud API directly and never reads these.
 ## 4. Deploy sequence
 
 1. **ai-services**: `cd ai-services && docker compose up -d ai-services` (explicitly name the service to skip `urdu-llm`)
-2. **n8n**: `cd backend/n8n && docker compose up -d`
-3. **Backend**: either `npm install && npm run dev` directly on the host, or containerize it (no existing Dockerfile for it yet, would need to be added if you want it in Docker too)
-4. **Import n8n workflows**: the 3 JSON files in `backend/n8n/` (reminders, missed-checkins, stale-blockers), import via n8n's UI, then activate each
-5. **Point Meta's webhook at your real domain**: Meta App dashboard → WhatsApp → Configuration → Webhook → set Callback URL to `https://yourdomain.com/webhook/whatsapp`, Verify Token to your `WHATSAPP_VERIFY_TOKEN` value, subscribe to the `messages` field
+2. **OpenSearch**: `cd backend && docker compose up -d opensearch` - see §4a for what this is for
+3. **n8n**: `cd backend/n8n && docker compose up -d`
+4. **Backend**: either `npm install && npm run dev` directly on the host, or containerize it (no existing Dockerfile for it yet, would need to be added if you want it in Docker too)
+5. **Import n8n workflows**: the 3 JSON files in `backend/n8n/` (reminders, missed-checkins, stale-blockers), import via n8n's UI, then activate each
+6. **Point Meta's webhook at your real domain**: Meta App dashboard → WhatsApp → Configuration → Webhook → set Callback URL to `https://yourdomain.com/webhook/whatsapp`, Verify Token to your `WHATSAPP_VERIFY_TOKEN` value, subscribe to the `messages` field
+
+## 4a. Automatic project-activity logging (OpenSearch + CI)
+
+Per the project's advisor feedback: activity logging shouldn't only
+depend on a developer manually reporting things over WhatsApp - the
+system should also be able to inspect the project's own codebase and
+log that automatically. Implementation:
+
+- **Store**: self-hosted [OpenSearch](https://opensearch.org/) (the
+  Apache-2.0-licensed, actually-open-source fork of the Elasticsearch
+  stack - Elasticsearch itself moved to a source-available license in
+  2021). Runs via `backend/docker-compose.yml`. Security plugin is
+  disabled for local/demo use (`plugins.security.disabled=true`) - never
+  do this on a real internet-facing instance.
+- **Trigger**: the `log-commit-activity` job in
+  `.github/workflows/ci.yml` fires on every push, builds a payload from
+  GitHub's own push-event commit data (no git history access needed in
+  the runner), and POSTs it to the backend.
+- **Ingestion**: `POST /logs/ingest-commits` (`routes/logs.js`), secret
+  -authenticated the same way `/cron/*` is, indexes each commit into
+  OpenSearch.
+- **Reading it back**: the agent's `queryProjectActivity` tool
+  (`tools/projectActivityTool.js`) lets a user ask "what's changed in
+  the codebase recently?" and get a real, commit-backed answer.
+
+**To wire up the CI side**, add two repository secrets (GitHub repo →
+Settings → Secrets and variables → Actions):
+| Secret | Value |
+|---|---|
+| `BACKEND_URL` | Your backend's public URL (the static ngrok domain from §0, or a real deployed host) |
+| `LOG_INGEST_SECRET` | Must match `LOG_INGEST_SECRET` in `backend/.env` |
+
+Until both secrets are set, the CI job logs what it *would* have sent
+and exits cleanly rather than failing the build (`continue-on-error` is
+also set as a second layer of protection - this must never be able to
+break CI, matching the project's established best-effort pattern for
+external integrations like Jira).
 
 ## 5. Post-deploy verification
 
@@ -130,3 +170,10 @@ number, and confirm both get replies.
   stray space or line break silently breaks every outbound message
   (this happened once during development from a copy-paste issue).
 - The **`urdu-llm` service must stay off** in production (see §1).
+- **OpenSearch 2.12+ requires `OPENSEARCH_INITIAL_ADMIN_PASSWORD`** at
+  container startup even when `plugins.security.disabled=true` is also
+  set - the security-demo installer checks for the password before the
+  disable flag takes effect, and the container exits immediately without
+  it (found the first time OpenSearch was started for this project).
+  Already set in `backend/docker-compose.yml`; only matters if you
+  recreate that file from scratch.

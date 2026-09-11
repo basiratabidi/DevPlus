@@ -39,11 +39,14 @@ communicating in Urdu or Roman Urdu than in formal written English.
 3. Automatically detect and prevent duplicate incident/blocker reports for
    the same underlying issue.
 4. Provide automated, time-based reminders and severity-based escalation
-   to a team lead without manual monitoring.
+   to a configured contact without manual monitoring.
 5. Integrate with an external issue tracker (Jira) so operational data
    captured conversationally is also visible in tools the wider
    organization already uses.
 6. Generate on-demand PDF activity reports and blocker summaries.
+7. Log project activity automatically from the codebase itself (commits,
+   via CI), so activity records don't depend entirely on a developer
+   remembering to report them.
 
 ## 5. Scope
 
@@ -96,6 +99,7 @@ enough to test automatically.
 | Containerization | Docker / Docker Compose |
 | CI/CD | GitHub Actions (syntax checks, Docker build check, backend boot/health check, and the automated unit test suite, run on every push) |
 | Testing | Node's built-in `node:test` runner (26 automated cases covering the deterministic language classifier and agent confirmation logic) |
+| Automatic activity logging | OpenSearch (self-hosted, Apache 2.0), commits indexed automatically by CI on every push - not manually reported by a developer |
 
 ## 8. Expected Outcomes
 

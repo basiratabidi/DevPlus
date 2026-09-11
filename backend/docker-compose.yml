@@ -1,0 +1,27 @@
+services:
+  # Self-hosted log store for automatic project-activity logging (commits
+  # pushed to the repo, ingested by CI - not manually reported by a
+  # developer over WhatsApp). OpenSearch, not Elasticsearch: it's the
+  # genuinely open-source (Apache 2.0) fork - Elasticsearch itself moved
+  # to a source-available license (Elastic License/SSPL) in 2021.
+  opensearch:
+    image: opensearchproject/opensearch:2.17.0
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      # Security plugin disabled: this is a local/demo deployment with no
+      # public exposure of port 9200 - never disable this on a real
+      # internet-facing instance.
+      - plugins.security.disabled=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      # OpenSearch 2.12+ requires this at container startup even though
+      # the security plugin itself is disabled above (the demo-config
+      # installer checks for it before the disable flag takes effect).
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=DevPulse_local_2026!
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+
+volumes:
+  opensearch_data:

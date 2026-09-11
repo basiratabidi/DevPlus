@@ -11,6 +11,7 @@ import { sendBlockersPdf } from '../tools/blockerPdfTool.js';
 import { logDeployment, listUpcomingDeployments } from '../tools/deploymentTool.js';
 import { getHistory as getDbHistory } from '../tools/historyTool.js';
 import { sendHistoryPdf } from '../tools/historyPdfTool.js';
+import { queryProjectActivity } from '../tools/projectActivityTool.js';
 import { getHistory as getConvoHistory, appendMessage, clearHistory } from './memory.js';
 dotenv.config();
 
@@ -189,6 +190,19 @@ const toolDefinitions = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'queryProjectActivity',
+      description: "Look up recent real commit activity in the project's codebase - pulled automatically from git by CI, never from anything a developer typed. Use this for questions like \"what's changed in the code recently?\" or \"what did we ship this week?\", not for the user's own logged incidents/blockers/deployments.",
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: ['string', 'null'], description: 'Optional keyword to filter commits by (matches commit message, author, or changed files). Omit to get the most recent commits.' },
+        },
+      },
+    },
+  },
 ];
 
 const TOOL_IMPL = {
@@ -204,6 +218,7 @@ const TOOL_IMPL = {
   listUpcomingDeployments: (userId) => listUpcomingDeployments({ userId }),
   getHistory: (userId, args) => getDbHistory({ userId, ...args }),
   sendHistoryPdf: (userId, args) => sendHistoryPdf({ userId, ...args }),
+  queryProjectActivity: (userId, args) => queryProjectActivity({ ...args }),
 };
 
 // Common near-miss aliases the model sometimes uses instead of the exact tool name

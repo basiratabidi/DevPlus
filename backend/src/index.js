@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { webhookRouter } from './services/whatsapp/webhook.js';
 import { cronRouter } from './routes/cron.js';
+import { logsRouter } from './routes/logs.js';
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ app.use(
 
 app.use(webhookRouter);
 app.use(cronRouter);
+app.use(logsRouter);
 
 app.get('/health', (req, res) => res.send('ok'));
 

@@ -22,11 +22,15 @@ graph TB
         LangTag["agent/languageTag.js<br/>(deterministic EN/UR/MIXED classifier)"]
         Tools["tools/*<br/>(task, incident, blocker,<br/>deployment, reminder, escalation)"]
         Cron["routes/cron.js"]
+        Logs["routes/logs.js"]
         JiraSvc["services/jira/"]
+        OSClient["services/opensearch/"]
         Webhook --> LangTag --> Agent
         Agent --> Tools
         Tools --> JiraSvc
         Cron --> Tools
+        Logs --> OSClient
+        Agent -->|queryProjectActivity| OSClient
     end
 
     subgraph AISvc["ai-services/ (Python, FastAPI)"]
@@ -43,6 +47,8 @@ graph TB
     Tools <--> DB[("PostgreSQL<br/>(Neon)")]
     JiraSvc <--> Jira["Jira Cloud API"]
     n8n["n8n<br/>(scheduled sweeps)"] -->|polls| Cron
+    OSClient <--> OpenSearch[("OpenSearch<br/>(self-hosted, commit logs)")]
+    CI["GitHub Actions CI<br/>(on every push)"] -->|POST commits| Logs
 
     Backend -->|reply| Meta -->|text / voice| User
 ```
@@ -102,6 +108,19 @@ A thin REST client wrapping Jira Cloud API v3's issue-creation endpoint.
 Called as a best-effort side effect from `reportIncident`/
 `reportBlocker`, wrapped in try/catch so DevPulse's own record is never
 blocked by Jira being unreachable or misconfigured.
+
+### 2.8 Automatic project-activity logging (`routes/logs.js`, `services/opensearch/`, `tools/projectActivityTool.js`)
+Added per advisor feedback that activity logging shouldn't depend only
+on a developer manually reporting it over WhatsApp - the system should
+also be able to inspect the project's own codebase directly. On every
+push, a GitHub Actions job (`log-commit-activity`) builds a commit-log
+payload from the push event itself (no git history access needed in the
+runner) and POSTs it to `/logs/ingest-commits`, a secret-authenticated
+endpoint mirroring the `/cron/*` pattern. Commits are indexed into a
+self-hosted OpenSearch instance. The agent can then read this back via
+the `queryProjectActivity` tool, e.g. answering "what's changed in the
+codebase recently?" from real commit data rather than anything logged
+by a person.
 
 ## 3. Data Design (Entity-Relationship Diagram)
 
@@ -252,6 +271,29 @@ sequenceDiagram
     A-->>U: "Updated timing, not logged as new."
 ```
 
+### 4.3 Automatic commit-activity logging
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant GH as GitHub Actions (CI)
+    participant B as backend (routes/logs.js)
+    participant OS as OpenSearch
+    participant U as User (WhatsApp)
+    participant A as Agent
+
+    Dev->>GH: git push
+    Note over GH: log-commit-activity job -<br/>builds payload from the push<br/>event itself, no git log needed
+    GH->>B: POST /logs/ingest-commits<br/>(secret-authenticated)
+    B->>OS: index each commit
+    Note over Dev,OS: No developer had to report<br/>anything over WhatsApp
+
+    U->>A: "what's changed in the code recently?"
+    A->>OS: queryProjectActivity()
+    OS-->>A: matching commits
+    A-->>U: real, commit-backed summary
+```
+
 ## 5. State Diagrams
 
 ### 5.1 Duplicate-confirmation gate (per user, `graph.js`)
@@ -318,6 +360,7 @@ stateDiagram-v2
 | `/cron/reminders` | POST | Reminder sweep (n8n) | Shared secret header |
 | `/cron/missed-checkins` | POST | Missed-checkin sweep (n8n) | Shared secret header |
 | `/cron/stale-blockers` | POST | Stale-blocker escalation (n8n) | Shared secret header |
+| `/logs/ingest-commits` | POST | Commit-log ingestion (CI, on every push) | Shared secret header |
 | `/health` | GET | Liveness check | None |
 | `ai-services:/transcribe` | POST | Voice-to-text | Internal network only |
 | `ai-services:/speak` | POST | Text-to-voice | Internal network only |
@@ -329,6 +372,8 @@ stateDiagram-v2
 | Deterministic language tagging instead of LLM-only inference | LLM language inference proved non-deterministic even at temperature 0; a rule-based classifier gives a stable signal the agent can trust |
 | Bounded multi-round tool loop instead of single-round | Some operations (duplicate check → confirmed update) require sequential tool calls within reasonable turns; a single-round design either silently under-executes or, if unconstrained, can execute a write before the user confirms |
 | Best-effort, non-blocking Jira integration | Jira must never become a hard dependency for DevPulse's own record-keeping |
+| Commit activity logged automatically via CI, not by a developer | Advisor feedback: activity logging shouldn't depend solely on a person remembering to report it - having CI inspect and log real commits on every push removes that dependency entirely |
+| OpenSearch instead of Elasticsearch for the log store | Same query/dashboard experience, but actually open-source (Apache 2.0) - Elasticsearch itself moved to a source-available license in 2021, which matters for an honestly-labeled "open source" claim in this documentation |
 | Self-hosted TTS, hosted STT/LLM | A local LLM was evaluated for a sub-task and measured too slow (~2.4 tok/s) on available hardware; STT/agent reasoning remain on Groq's hosted, higher-throughput API, while the smaller VITS TTS models run locally at acceptable cost |
 | Escalation messages built from a human-readable summary, not raw internal ids | Found via live testing: the original message format (`Escalation triggered (P1_incident) for user 11...`) exposed internal ids to a real recipient with no context, and could arrive interleaved into an unrelated WhatsApp conversation that person was having with the bot. `evaluateEscalation` now takes an explicit `summary` string from the caller and includes the reporter's name, instead of formatting from ids alone. |
 | Immediate blocker escalation wired at the call site, not left to the sweep | `maybeEscalateBlocker` existed but was never actually invoked from `reportBlocker` - found via checking real database state during live testing, not assumed from the function's existence. High-severity blockers now escalate immediately, matching the same pattern `reportIncident` already used for P1. |

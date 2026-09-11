@@ -135,3 +135,39 @@ jobs:
           fi
           curl -sf http://localhost:3001/health
           kill $PID
+
+  log-commit-activity:
+    name: Log commit activity - automatic, not developer-reported
+    runs-on: ubuntu-latest
+    # Only real pushes carry github.event.commits in this shape.
+    if: github.event_name == 'push'
+    # Best-effort by design (same reasoning as the Jira integration): the
+    # backend being unreachable must never fail the build.
+    continue-on-error: true
+    steps:
+      - name: Build commit log payload from the push event
+        run: |
+          echo '${{ toJson(github.event.commits) }}' > commits_raw.json
+          jq '{commits: map({
+            sha: .id,
+            author: .author.name,
+            message: .message,
+            timestamp: .timestamp,
+            filesChanged: (.added + .removed + .modified)
+          })}' commits_raw.json > payload.json
+
+      - name: Ingest into DevPulse's commit log (OpenSearch, via the backend)
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          LOG_INGEST_SECRET: ${{ secrets.LOG_INGEST_SECRET }}
+        run: |
+          if [ -z "$BACKEND_URL" ] || [ -z "$LOG_INGEST_SECRET" ]; then
+            echo "BACKEND_URL/LOG_INGEST_SECRET repo secrets not set yet - skipping (see docs/DEPLOYMENT.md). Payload that would have been sent:"
+            cat payload.json
+            exit 0
+          fi
+          curl -sf -X POST "$BACKEND_URL/logs/ingest-commits" \
+            -H "Content-Type: application/json" \
+            -H "x-log-ingest-secret: $LOG_INGEST_SECRET" \
+            -d @payload.json \
+            || echo "::warning::Commit-log ingestion failed (backend unreachable?) - non-blocking."

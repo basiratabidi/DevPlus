@@ -94,6 +94,27 @@ gitignored, never committed), automated CI (`.github/workflows/ci.yml`)
 running syntax checks, a Docker build check, a backend boot/health
 check, and the unit test suite on every push.
 
+### Automatic project-activity logging
+Added per advisor feedback: activity logging shouldn't depend only on a
+developer manually reporting it over WhatsApp. A new CI job
+(`log-commit-activity`) fires on every push, builds a commit-log payload
+from GitHub's own push event, and posts it to a new secret-authenticated
+endpoint (`/logs/ingest-commits`) that indexes each commit into a
+self-hosted OpenSearch instance (`backend/docker-compose.yml`; the
+Apache-2.0 open-source fork of the Elasticsearch stack, not Elasticsearch
+itself, which moved to a source-available license in 2021). The agent
+gained a matching read-side tool, `queryProjectActivity`, so a user can
+ask "what's changed in the codebase recently?" and get a real answer
+backed by actual commits. Verified end-to-end locally: real commits
+ingested, a genuine bug found and fixed in the process (OpenSearch's
+default text tokenizer keeps file extensions attached to filenames, e.g.
+`escalationruletool.js` as one token, so a plain search for
+"escalationRuleTool" without the extension silently returned nothing
+until the query was switched to a wildcard match). CI→backend wiring
+itself still needs the `BACKEND_URL`/`LOG_INGEST_SECRET` GitHub repo
+secrets set (see `docs/DEPLOYMENT.md` §4a) - until then the CI job logs
+what it would have sent and exits cleanly rather than failing the build.
+
 ---
 
 ## Genuinely still open
@@ -124,6 +145,13 @@ check, and the unit test suite on every push.
   grounded in real verified test cases from `docs/TESTING.md` (not
   invented dialogue), five flows: text logging, Urdu voice, duplicate
   detection, Jira mirroring, P1 escalation. Slides still don't exist.
+- **CI → backend wiring for commit-log ingestion**, the code path is
+  built and verified end-to-end locally, but the actual GitHub Actions
+  job has never fired against a real live backend yet - needs
+  `BACKEND_URL`/`LOG_INGEST_SECRET` set as GitHub repo secrets, which in
+  turn needs the static ngrok domain from `docs/DEPLOYMENT.md` §0 to be
+  claimed first (otherwise `BACKEND_URL` would go stale on the next
+  ngrok restart).
 
 ---
 

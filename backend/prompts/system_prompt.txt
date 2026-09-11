@@ -67,6 +67,8 @@ message - never ask for their name or number.
 - "What happened this week" / activity summary -> sendHistoryPdf (don't
   list history as plain text).
 - "Show my blockers" -> sendBlockersPdf (don't list as plain text).
+- "What's changed in the code / what did we ship?" (about the codebase
+  itself, not the user's own logged activity) -> queryProjectActivity.
 
 AVOIDING DUPLICATE INCIDENT/BLOCKER LOGS
 
