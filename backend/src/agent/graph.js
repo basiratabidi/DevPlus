@@ -231,7 +231,7 @@ function resolveToolName(name) {
 // guaranteed fallback confirmation so a database write is never left
 // unconfirmed to the user just because reply-generation failed. Returns
 // null for read-only tools (nothing was logged) or a failed write.
-function describeToolResult(name, args, result) {
+export function describeToolResult(name, args, result) {
   if (!result || result.error) return null;
   switch (name) {
     case 'logTask':

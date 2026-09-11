@@ -128,4 +128,4 @@ programmatically
 - **TTS-07**: mixed-language audio quality, by ear, on a real device.
 - Onboarding flow — not exercised during this test round (Groq-quota-blocked at the time; logically unchanged from prior testing).
 - Multi-user concurrency — all testing has been single-user.
-- No automated test suite exists (`src/scripts/testTools.js` / `testTool.js` are manual scratch scripts, not CI-run tests). Everything above was verified by direct execution during development, not by a repeatable test harness.
+- **Partially closed**: `backend/test/` now holds an automated `node:test` suite (26 cases, run via `npm test` and in CI's `backend-unit-tests` job) covering the two pure, DB-free units — `languageTag.js` (TC-LNG-01 through TC-LNG-08 from `docs/TEST_CASES.md`) and `graph.js`'s `describeToolResult`. Everything that touches the database, WhatsApp, Groq, or Jira is still verified only by direct execution / live WhatsApp testing, not by the automated suite — those integrations would need mocking or a test database to cover, which hasn't been built yet.
