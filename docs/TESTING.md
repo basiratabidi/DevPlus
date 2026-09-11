@@ -84,6 +84,7 @@ programmatically
 | STT-01 | `language="ur"` forced (original config) | English speech, Pakistani accent | Accurate English transcript | 🔴 **Failed** — Whisper phonetically transliterated English into Urdu script | Live WA |
 | STT-02 | Auto-detect (no forced language) | Urdu speech ("yeh eik naya error hai") | Accurate Urdu transcript | 🔴 **Failed** — misidentified as Turkish entirely | Live WA |
 | STT-03 | Detect-then-conditional-retry (current) | Various | Correct transcript, retries forced-`ur` only if detection lands outside en/ur | 🟢 Pass — fix verified live (correct auto-detect, e.g. `language=urdu` logged with no retry needed) | Live WA |
+| STT-03b | Retry branch itself firing (retest of STT-02's case under current config) | Same Urdu speech that STT-02 misidentified as Turkish | Auto-detect lands outside en/ur, forced-`ur` retry engages, correct Urdu transcript produced | 🟢 Pass — retested later, retry path confirmed firing and correcting the transcript | Live WA |
 | STT-04 | Domain vocabulary correction | "roll back", "data base", "stand up" (STT-split compounds) | Normalized to "rollback"/"database"/"standup" | 🟢 Pass | Direct (unit test) |
 | STT-05 | Severity code correction | "B1"/"V1"/"D1"/"T1" mis-hearings | Corrected to "P1" etc. | 🟢 Pass (pre-existing, confirmed still working) | Direct |
 
@@ -124,7 +125,6 @@ programmatically
 
 ## Known gaps — explicitly not yet verified
 
-- **STT-03's retry branch** (auto-detect lands outside en/ur → forced retry) has been logically verified and the underlying misdetection bug (STT-02) is fixed, but the retry path itself firing in a real live call hasn't been directly observed yet.
 - **TTS-07**: mixed-language audio quality, by ear, on a real device.
 - Onboarding flow — not exercised during this test round (Groq-quota-blocked at the time; logically unchanged from prior testing).
 - Multi-user concurrency — all testing has been single-user.
