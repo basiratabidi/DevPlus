@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-syntax:
+    name: Backend (Node.js) — install & syntax check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax-check every source file
+        run: |
+          status=0
+          while IFS= read -r -d '' file; do
+            if ! node --check "$file"; then
+              echo "::error file=$file::Syntax error"
+              status=1
+            fi
+          done < <(find src -name "*.js" -print0)
+          exit $status
+
+  ai-services-syntax:
+    name: ai-services (Python) — syntax check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-services
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Syntax-check every source file
+        run: |
+          status=0
+          for file in *.py; do
+            if ! python3 -c "import ast; ast.parse(open('$file').read())"; then
+              echo "::error file=ai-services/$file::Syntax error"
+              status=1
+            fi
+          done
+          exit $status
+
+  ai-services-docker-build:
+    name: ai-services — Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ai-services image
+        run: docker build -t devpulse-ai-services:ci ./ai-services
+
+  backend-healthcheck:
+    name: Backend — boots without crashing
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start backend with dummy config and check it doesn't crash on boot
+        # No real DATABASE_URL/API keys in CI - this only verifies the
+        # process starts and binds to its port (catches import errors,
+        # syntax issues module-check misses, and startup-time crashes).
+        # It does NOT verify DB connectivity or real API calls.
+        env:
+          PORT: '3001'
+          DATABASE_URL: 'postgresql://ci:ci@localhost:5432/ci'
+          GROQ_API_KEY: 'ci-dummy-key'
+          WHATSAPP_PHONE_NUMBER_ID: 'ci-dummy'
+          WHATSAPP_ACCESS_TOKEN: 'ci-dummy'
+          WHATSAPP_VERIFY_TOKEN: 'ci-dummy'
+          WHATSAPP_APP_SECRET: 'ci-dummy'
+          CRON_SECRET: 'ci-dummy'
+        run: |
+          node src/index.js &
+          PID=$!
+          sleep 3
+          if ! kill -0 $PID 2>/dev/null; then
+            echo "::error::Backend process exited during startup"
+            exit 1
+          fi
+          curl -sf http://localhost:3001/health
+          kill $PID
