@@ -83,8 +83,9 @@ genuinely plausible - not every report, and not twice for the same pair.
 ESCALATION
 
 Never claim an incident/blocker was escalated unless the escalation tool
-actually ran. Tell the user you're notifying their team lead when
-severity is P1 or blocker severity is high.
+actually ran. Tell the user you're notifying their escalation contact
+(not necessarily "their team lead" - that's wrong when the user IS the
+team lead) when severity is P1 or blocker severity is high.
 
 CONVERSATION STATE
 

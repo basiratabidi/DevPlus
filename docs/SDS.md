@@ -252,7 +252,64 @@ sequenceDiagram
     A-->>U: "Updated timing, not logged as new."
 ```
 
-## 5. Interface Design
+## 5. State Diagrams
+
+### 5.1 Duplicate-confirmation gate (per user, `graph.js`)
+
+The `pendingDupConfirmation` map tracks, per user, whether the previous
+turn ended on an unanswered "is this the same one?" question. This gates
+which turn is allowed to call `updateIncidentTiming` /
+`updateBlockerTiming` — the write can only happen on the turn that
+actually answers the question, never the turn that asks it (a real bug
+found via live testing: the write used to fire a turn early).
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Idle: message with no duplicate found\n(new record created normally)
+    Idle --> AwaitingConfirmation: listOpenIncidents/listOpenBlockers\nfinds a plausible match\n(update tool withheld this turn)
+    AwaitingConfirmation --> Idle: user answers\n(yes -> updateTiming runs, no -> new record created)
+    AwaitingConfirmation --> AwaitingConfirmation: LLM failure / malformed turn\n(state held, re-asked next turn - see RES-02)
+```
+
+### 5.2 Onboarding session (per phone number, `agent/onboarding.js`)
+
+An in-memory session (keyed by phone number) walks an unrecognized
+WhatsApp number through registration before it ever reaches the main
+agent. The escalation-contact step is explicitly skippable, and its
+wording adapts to the user's own stated role (fixed after live testing
+showed it wrongly assumed everyone has a "team lead" above them).
+
+```mermaid
+stateDiagram-v2
+    [*] --> CollectingName
+    CollectingName --> CollectingRoleTeam: createUser called
+    CollectingRoleTeam --> CollectingEscalationContact: upsertProfile called
+    CollectingEscalationContact --> Completed: addEscalationContact called
+    CollectingEscalationContact --> Completed: user explicitly skips
+    Completed --> [*]: completeOnboarding called,\nsession cleared, profile.onboarding_complete = true
+```
+
+### 5.3 Incident / blocker lifecycle
+
+Blockers carry an `escalated_at` guard that incidents don't need
+(incidents don't currently re-escalate after their initial P1 trigger).
+Re-confirming an already-escalated blocker as still-open resets that
+guard, making it eligible to escalate again after another full
+threshold period rather than being permanently skipped.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Open: reportIncident / reportBlocker
+    Open --> Open: re-confirmed same issue\n(updateIncidentTiming/updateBlockerTiming,\nreported_at refreshed)
+    Open --> Escalated: P1 incident (immediate) or\nhigh-severity blocker (immediate) or\nblocker stale past threshold (sweep)
+    Escalated --> Open: blocker only - re-confirmed via\nupdateBlockerTiming (escalated_at reset to null)
+    Open --> Resolved
+    Escalated --> Resolved
+    Resolved --> [*]
+```
+
+## 6. Interface Design
 
 | Endpoint | Method | Purpose | Auth |
 |---|---|---|---|
@@ -265,7 +322,7 @@ sequenceDiagram
 | `ai-services:/transcribe` | POST | Voice-to-text | Internal network only |
 | `ai-services:/speak` | POST | Text-to-voice | Internal network only |
 
-## 6. Design Decisions and Rationale
+## 7. Design Decisions and Rationale
 
 | Decision | Rationale |
 |---|---|
@@ -273,3 +330,5 @@ sequenceDiagram
 | Bounded multi-round tool loop instead of single-round | Some operations (duplicate check → confirmed update) require sequential tool calls within reasonable turns; a single-round design either silently under-executes or, if unconstrained, can execute a write before the user confirms |
 | Best-effort, non-blocking Jira integration | Jira must never become a hard dependency for DevPulse's own record-keeping |
 | Self-hosted TTS, hosted STT/LLM | A local LLM was evaluated for a sub-task and measured too slow (~2.4 tok/s) on available hardware; STT/agent reasoning remain on Groq's hosted, higher-throughput API, while the smaller VITS TTS models run locally at acceptable cost |
+| Escalation messages built from a human-readable summary, not raw internal ids | Found via live testing: the original message format (`Escalation triggered (P1_incident) for user 11...`) exposed internal ids to a real recipient with no context, and could arrive interleaved into an unrelated WhatsApp conversation that person was having with the bot. `evaluateEscalation` now takes an explicit `summary` string from the caller and includes the reporter's name, instead of formatting from ids alone. |
+| Immediate blocker escalation wired at the call site, not left to the sweep | `maybeEscalateBlocker` existed but was never actually invoked from `reportBlocker` - found via checking real database state during live testing, not assumed from the function's existence. High-severity blockers now escalate immediately, matching the same pattern `reportIncident` already used for P1. |

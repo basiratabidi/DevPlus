@@ -6,10 +6,12 @@ import { sendWhatsAppMessage } from '../services/whatsapp/sendMessage.js';
  * notifies the user's escalation contact (team lead / on-call).
  * Mirrors the "SafetyEvents" tool in GlucoWhats.
  */
-export async function evaluateEscalation({ userId, sourceType, sourceId, ruleTriggered }) {
+export async function evaluateEscalation({ userId, sourceType, sourceId, ruleTriggered, summary }) {
   const contactResult = await query(
-    `SELECT id, contact_name, contact_number FROM escalation_contacts
-     WHERE user_id = $1 LIMIT 1`,
+    `SELECT ec.id, ec.contact_name, ec.contact_number, u.name AS reporter_name
+     FROM escalation_contacts ec
+     JOIN users u ON u.id = ec.user_id
+     WHERE ec.user_id = $1 LIMIT 1`,
     [userId]
   );
 
@@ -31,10 +33,17 @@ export async function evaluateEscalation({ userId, sourceType, sourceId, ruleTri
     [userId, sourceType, sourceId, ruleTriggered, contact.id]
   );
 
-  await sendWhatsAppMessage({
-    to: contact.contact_number,
-    text: `Escalation triggered (${ruleTriggered}) for user ${userId}. Source: ${sourceType} #${sourceId}.`,
-  });
+  // Human-readable text for a real person receiving this on WhatsApp -
+  // internal ids (userId/sourceId/ruleTriggered) stay in escalation_events
+  // for audit, but were previously leaking raw into the message itself
+  // (found via live testing: "Escalation triggered (P1_incident) for user
+  // 11. Source: incident #17." landing with zero context in the contact's
+  // own WhatsApp thread).
+  const text = summary
+    ? `🚨 Escalation: ${summary} — reported by ${contact.reporter_name}.`
+    : `🚨 Escalation triggered for ${contact.reporter_name} (${sourceType} #${sourceId}).`;
+
+  await sendWhatsAppMessage({ to: contact.contact_number, text });
 
   return { escalationEventId: eventResult.rows[0].id, notified: true };
 }
@@ -45,7 +54,7 @@ export async function evaluateEscalation({ userId, sourceType, sourceId, ruleTri
  */
 export async function checkStaleBlockers({ hoursThreshold = 48 } = {}) {
   const result = await query(
-    `SELECT id, user_id FROM blockers
+    `SELECT id, user_id, description FROM blockers
      WHERE status = 'open' AND escalated_at IS NULL
        AND reported_at < now() - ($1 || ' hours')::interval`,
     [hoursThreshold]
@@ -58,6 +67,7 @@ export async function checkStaleBlockers({ hoursThreshold = 48 } = {}) {
       sourceType: 'blocker',
       sourceId: blocker.id,
       ruleTriggered: `blocker_open_${hoursThreshold}h`,
+      summary: `Blocker open ${hoursThreshold}h+: "${blocker.description}"`,
     });
     await query(`UPDATE blockers SET escalated_at = now() WHERE id = $1`, [blocker.id]);
     escalated.push({ blockerId: blocker.id, ...outcome });

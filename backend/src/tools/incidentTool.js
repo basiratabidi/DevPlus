@@ -27,6 +27,7 @@ export async function reportIncident({ userId, title, description, severity, aff
       sourceType: 'incident',
       sourceId: incident.id,
       ruleTriggered: 'P1_incident',
+      summary: `P1 incident: "${title}"`,
     });
   }
 

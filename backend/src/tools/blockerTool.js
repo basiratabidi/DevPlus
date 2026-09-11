@@ -17,6 +17,12 @@ export async function reportBlocker({ userId, description, severity }) {
   );
   const blocker = result.rows[0];
 
+  // Immediate escalation for high-severity blockers, mirroring
+  // reportIncident's P1 handling - previously defined but never actually
+  // called from here, so high-severity blockers silently waited for the
+  // 48h stale-blocker sweep instead of escalating right away.
+  await maybeEscalateBlocker({ userId, blockerId: blocker.id, severity, description });
+
   // Best-effort Jira push - see reportIncident for the same pattern and
   // reasoning (never blocks or fails the blocker report itself).
   try {
@@ -77,12 +83,13 @@ export async function listOpenBlockers({ userId = null }) {
  * Call this after reportBlocker if you want immediate escalation
  * rather than waiting for the scheduled stale-blocker sweep.
  */
-export async function maybeEscalateBlocker({ userId, blockerId, severity }) {
+export async function maybeEscalateBlocker({ userId, blockerId, severity, description }) {
   if (severity !== 'high') return null;
   return evaluateEscalation({
     userId,
     sourceType: 'blocker',
     sourceId: blockerId,
     ruleTriggered: 'high_severity_blocker',
+    summary: `High-severity blocker: "${description}"`,
   });
 }

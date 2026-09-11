@@ -185,6 +185,12 @@ logging operations.
 deployments, task logs) shall be timestamped and persisted in a
 queryable relational store.
 
+**NFR-7 Notification readability.** Messages sent to an escalation
+contact shall be human-readable (what happened, and who reported it),
+not a raw dump of internal identifiers - found necessary after live
+testing showed a real recipient receiving an unexplained,
+identifier-only message with no actionable context.
+
 ### 3.3 External Interface Requirements
 
 **EIR-1** WhatsApp Cloud API (Meta) — inbound webhook (text/audio

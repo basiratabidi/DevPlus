@@ -113,9 +113,13 @@ check, and the unit test suite on every push.
   for the reasoning and the risk it introduces — free ngrok's URL
   rotates on restart unless a static domain is claimed, which that
   section walks through).
-- **Credential rotation** — still pending, requires you to act in three
-  dashboards (Groq, Meta, Jira) since none of that can be done from
-  here. Exact steps in `docs/CREDENTIAL_ROTATION.md`.
+- **Credential rotation** — Groq, WhatsApp access token, and Jira API
+  token are all rotated and directly verified (each against a real API
+  call on the new credential, not just assumed from a restart). The
+  WhatsApp **App Secret** is the one holdout — the value returned from
+  Meta's dashboard was identical to the old one, so it wasn't actually
+  regenerated; still exposed. See `docs/CREDENTIAL_ROTATION.md` for the
+  detail.
 - **Presentation materials** — `docs/DEMO_SCRIPT.md` now exists,
   grounded in real verified test cases from `docs/TESTING.md` (not
   invented dialogue) — five flows: text logging, Urdu voice, duplicate

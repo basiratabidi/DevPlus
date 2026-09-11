@@ -62,7 +62,7 @@ const toolDefinitions = [
     type: 'function',
     function: {
       name: 'addEscalationContact',
-      description: "Save the user's team lead as their escalation contact.",
+      description: "Save the person the user wants notified for urgent escalations (not necessarily their team lead - could be a manager, peer lead, or on-call backup, especially if the user themselves is the team lead).",
       parameters: {
         type: 'object',
         properties: {
