@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node --check server.js
+
+  # Demonstrates Option A from docs/CONNECTING_A_PROJECT.md: report a CI
+  # failure straight to DevPulse, no application code involved.
+  report-ci-failure:
+    name: Report CI failure to DevPulse
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: failure()
+    continue-on-error: true
+    steps:
+      - name: Report failure to DevPulse
+        env:
+          BACKEND_URL: ${{ secrets.DEVPULSE_BACKEND_URL }}
+          LOG_INGEST_SECRET: ${{ secrets.DEVPULSE_LOG_INGEST_SECRET }}
+        run: |
+          curl -sf -X POST "$BACKEND_URL/logs/ingest-error" \
+            -H "Content-Type: application/json" \
+            -H "x-log-ingest-secret: $LOG_INGEST_SECRET" \
+            -d '{
+              "project": "demo-external-project",
+              "level": "error",
+              "message": "CI failed on ${{ github.ref_name }} (${{ github.sha }})",
+              "source": "github-actions",
+              "stack": "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }' || echo "::warning::Failed to report CI failure to DevPulse - non-blocking."
