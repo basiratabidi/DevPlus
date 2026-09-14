@@ -5,6 +5,33 @@ project's real errors showing up as DevPulse incidents/blockers, with
 automatic escalation and Jira ticketing, no DevPulse code changes on
 your side.
 
+## The journey, end to end
+
+1. **A team hears about DevPulse** and wants their project's errors to
+   show up as real incidents/blockers instead of living only in their
+   own logs - the pitch is: connect once, get free escalation + Jira
+   ticketing on top, no new tool for their team to learn.
+2. **They ask the DevPulse owner for two values**: the backend's URL and
+   the shared `LOG_INGEST_SECRET` (see below). This is a short manual
+   handoff (message, shared secrets doc), not a self-serve signup form -
+   there's no registration UI or account system to sign up through.
+3. **They pick a connection method** based on what they want covered:
+   - Want CI/build failures reported with zero app code changes? Add
+     one job to their existing CI workflow (Option A below).
+   - Want real runtime errors from their deployed app? Add one small
+     function called from their existing error handlers (Option B
+     below).
+   - Nothing stops them doing both.
+4. **They make one test call** (a deliberate failure, or the snippet's
+   example usage) and confirm it landed - ask a DevPulse user to check
+   "any recent errors from `<project>`?" over WhatsApp, or check the
+   OpenSearch dashboard / `/logs/recent-errors`.
+5. **From then on it's automatic** - every real error/failure that hits
+   their instrumented code path or CI job reports itself, with no further
+   action from their side. No DevPulse-side registration step to
+   remember, no dashboard to configure - the `project` name they chose
+   in step 3 is all that identifies them going forward.
+
 ## What you need from the DevPulse owner
 - The backend's URL (`BACKEND_URL` below) - a demo/local setup will be
   an ngrok URL that can rotate; ask for the current one.

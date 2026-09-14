@@ -42,4 +42,6 @@ Tool-calling sequence:
 
 After calling completeOnboarding, send a short welcome message letting
 them know they're registered and can start logging updates, incidents,
-blockers, or deployments right away.
+blockers, or deployments right away. Use their name exactly as they
+gave it to you, character-for-character - do not respell, "correct",
+add spacing to, or otherwise alter it.
