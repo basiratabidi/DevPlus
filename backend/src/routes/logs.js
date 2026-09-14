@@ -1,5 +1,5 @@
 import express from 'express';
-import { indexCommitLog, searchCommitLogs, recentWebhookHits, recentErrorLogs } from '../services/opensearch/client.js';
+import { indexCommitLog, searchCommitLogs, recentWebhookHits, recentErrorLogs, errorsByProject } from '../services/opensearch/client.js';
 import { ingestProjectError } from '../tools/errorIngestTool.js';
 
 export const logsRouter = express.Router();
@@ -94,6 +94,19 @@ logsRouter.get('/logs/recent-errors', async (req, res) => {
     res.json({ errors });
   } catch (err) {
     console.error('logs/recent-errors error', err);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Per-connected-project rollup (total errors, last-seen, level mix) -
+// backs the status dashboard's "Connected Projects" section, same
+// read-only/not-secret-gated reasoning as the other /logs/recent-* routes.
+logsRouter.get('/logs/errors-by-project', async (req, res) => {
+  try {
+    const projects = await errorsByProject({ limit: 20 });
+    res.json({ projects });
+  } catch (err) {
+    console.error('logs/errors-by-project error', err);
     res.status(500).json({ error: 'internal_error' });
   }
 });

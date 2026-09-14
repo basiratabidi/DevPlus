@@ -1,0 +1,245 @@
+/**
+ * Auto-provisions a dedicated OpenSearch index + OpenSearch Dashboards
+ * dashboard for each connected external project, the first time that
+ * project's name is ever seen in an ingested error - mirrors the
+ * hand-built `devpulse-commit-logs`/`devpulse-webhook-hits`/
+ * `devpulse-error-logs` dashboard panels (see `DevPulse Overview`), but
+ * one dedicated set per project instead of one shared view.
+ *
+ * Triggered from `tools/errorIngestTool.js` on every
+ * `POST /logs/ingest-error` call (the same endpoint a connected
+ * project's CI job or error handler hits), so a brand-new project gets
+ * its own index/dashboard automatically on its very first reported
+ * error/CI failure - no manual OSD click-through needed.
+ *
+ * Talks to OpenSearch Dashboards' saved-objects API directly (not
+ * through the backend's `/opensearch-dashboards` reverse proxy, which
+ * is for browser traffic only) - same unprefixed-path reasoning as
+ * `SERVER_REWRITEBASEPATH=false` in docker-compose.yml.
+ */
+
+function osdBaseUrl() {
+  return (process.env.OPENSEARCH_DASHBOARDS_URL || 'http://localhost:5601').replace(/\/$/, '');
+}
+
+function isConfigured() {
+  return Boolean(process.env.OPENSEARCH_URL);
+}
+
+/** "My App!" -> "my-app" - used in index names and saved-object ids. */
+export function slugifyProject(project) {
+  return String(project)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'unknown-project';
+}
+
+export function projectIndexName(project) {
+  return `devpulse-project-${slugifyProject(project)}`;
+}
+
+async function osdGet(type, id) {
+  const res = await fetch(`${osdBaseUrl()}/api/saved_objects/${type}/${id}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`OSD GET ${type}/${id} failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+async function osdPut(type, id, body) {
+  const res = await fetch(`${osdBaseUrl()}/api/saved_objects/${type}/${id}?overwrite=true`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'osd-xsrf': 'true' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`OSD PUT ${type}/${id} failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+function metricVisualization(indexPatternId, title) {
+  return {
+    attributes: {
+      title,
+      visState: JSON.stringify({
+        title,
+        type: 'metric',
+        params: {
+          addTooltip: true,
+          addLegend: false,
+          type: 'metric',
+          metric: {
+            percentageMode: false,
+            useRanges: false,
+            colorSchema: 'Green to Red',
+            metricColorMode: 'None',
+            colorsRange: [{ from: 0, to: 10000 }],
+            labels: { show: true },
+            invertColors: false,
+            style: { bgFill: '#000', bgColor: false, labelColor: false, subText: '', fontSize: 60 },
+          },
+        },
+        aggs: [{ id: '1', enabled: true, type: 'count', schema: 'metric', params: {} }],
+      }),
+      uiStateJSON: '{}',
+      description: '',
+      version: 1,
+      kibanaSavedObjectMeta: {
+        searchSourceJSON: JSON.stringify({
+          query: { query: '', language: 'kuery' },
+          filter: [],
+          indexRefName: 'kibanaSavedObjectMeta.searchSourceJSON.index',
+        }),
+      },
+    },
+    references: [{ name: 'kibanaSavedObjectMeta.searchSourceJSON.index', type: 'index-pattern', id: indexPatternId }],
+  };
+}
+
+function timeseriesVisualization(indexPatternId, title) {
+  return {
+    attributes: {
+      title,
+      visState: JSON.stringify({
+        title,
+        type: 'histogram',
+        params: {
+          type: 'histogram',
+          grid: { categoryLines: false },
+          categoryAxes: [
+            { id: 'CategoryAxis-1', type: 'category', position: 'bottom', show: true, style: {}, scale: { type: 'linear' }, labels: { show: true, filter: true, truncate: 100 }, title: {} },
+          ],
+          valueAxes: [
+            { id: 'ValueAxis-1', name: 'LeftAxis-1', type: 'value', position: 'left', show: true, style: {}, scale: { type: 'linear', mode: 'normal' }, labels: { show: true, rotate: 0, filter: false, truncate: 100 }, title: { text: 'Count' } },
+          ],
+          seriesParams: [
+            { show: true, type: 'histogram', mode: 'stacked', data: { label: 'Count', id: '1' }, valueAxis: 'ValueAxis-1', drawLinesBetweenPoints: true, showCirclesOnLines: true, interpolate: 'linear', lineWidth: 2, showCircles: true },
+          ],
+          addTooltip: true,
+          addLegend: false,
+          legendPosition: 'right',
+          times: [],
+          addTimeMarker: false,
+          labels: {},
+          thresholdLine: { show: false, value: 10, width: 1, style: 'full', color: '#E7664C' },
+        },
+        aggs: [
+          { id: '1', enabled: true, type: 'count', schema: 'metric', params: {} },
+          {
+            id: '2',
+            enabled: true,
+            type: 'date_histogram',
+            schema: 'segment',
+            params: {
+              field: 'timestamp',
+              timeRange: { from: 'now-90d', to: 'now' },
+              useNormalizedOpenSearchInterval: true,
+              scaleMetricValues: false,
+              interval: 'auto',
+              drop_partials: false,
+              min_doc_count: 1,
+              extended_bounds: {},
+            },
+          },
+        ],
+      }),
+      uiStateJSON: '{}',
+      description: '',
+      version: 1,
+      kibanaSavedObjectMeta: {
+        searchSourceJSON: JSON.stringify({
+          query: { query: '', language: 'kuery' },
+          filter: [],
+          indexRefName: 'kibanaSavedObjectMeta.searchSourceJSON.index',
+        }),
+      },
+    },
+    references: [{ name: 'kibanaSavedObjectMeta.searchSourceJSON.index', type: 'index-pattern', id: indexPatternId }],
+  };
+}
+
+function recentErrorsSearch(indexPatternId, title) {
+  return {
+    attributes: {
+      title,
+      description: '',
+      hits: 0,
+      columns: ['timestamp', 'level', 'message', 'source'],
+      sort: [['timestamp', 'desc']],
+      version: 1,
+      kibanaSavedObjectMeta: {
+        searchSourceJSON: JSON.stringify({
+          query: { query: '', language: 'kuery' },
+          filter: [],
+          indexRefName: 'kibanaSavedObjectMeta.searchSourceJSON.index',
+        }),
+      },
+    },
+    references: [{ name: 'kibanaSavedObjectMeta.searchSourceJSON.index', type: 'index-pattern', id: indexPatternId }],
+  };
+}
+
+function dashboard(title, description, panelRefs) {
+  const panelsJSON = panelRefs.map((ref, i) => ({
+    version: '2.17.0',
+    gridData: { x: (i % 3) * 16, y: Math.floor(i / 3) * (i < 3 ? 8 : 15), w: i < 3 ? 16 : 48, h: i < 3 ? 8 : 15 },
+    panelIndex: String(i + 1),
+    embeddableConfig: {},
+    panelRefName: `panel_${i + 1}`,
+  }));
+
+  return {
+    attributes: {
+      title,
+      hits: 0,
+      description,
+      panelsJSON: JSON.stringify(panelsJSON),
+      optionsJSON: JSON.stringify({ useMargins: true, hidePanelTitles: false }),
+      version: 1,
+      timeRestore: true,
+      timeTo: 'now',
+      timeFrom: 'now-90d',
+      kibanaSavedObjectMeta: { searchSourceJSON: JSON.stringify({ query: { query: '', language: 'kuery' }, filter: [] }) },
+    },
+    references: panelRefs.map((ref, i) => ({ name: `panel_${i + 1}`, type: ref.type, id: ref.id })),
+  };
+}
+
+/**
+ * Idempotent: does nothing if this project's index-pattern already
+ * exists. Best-effort by design (same reasoning as Jira/escalation
+ * integrations elsewhere) - OSD being unreachable must never break
+ * error ingestion, so callers should catch and log, not propagate.
+ */
+export async function ensureConnectedProjectDashboard(project) {
+  if (!isConfigured()) return null;
+
+  const slug = slugifyProject(project);
+  const indexPatternId = `devpulse-project-${slug}`;
+
+  const existing = await osdGet('index-pattern', indexPatternId);
+  if (existing) return { created: false, dashboardId: `devpulse-project-${slug}-dashboard` };
+
+  await osdPut('index-pattern', indexPatternId, {
+    attributes: { title: `${indexPatternId}*`, timeFieldName: 'timestamp', fields: '[]' },
+    references: [],
+  });
+
+  const metricId = `devpulse-project-${slug}-metric`;
+  const timeseriesId = `devpulse-project-${slug}-timeseries`;
+  const searchId = `devpulse-project-${slug}-search`;
+  const dashboardId = `devpulse-project-${slug}-dashboard`;
+
+  await osdPut('visualization', metricId, metricVisualization(indexPatternId, `Total Errors — ${project}`));
+  await osdPut('visualization', timeseriesId, timeseriesVisualization(indexPatternId, `Errors per day — ${project}`));
+  await osdPut('search', searchId, recentErrorsSearch(indexPatternId, `${project} — Recent Errors`));
+  await osdPut(
+    'dashboard',
+    dashboardId,
+    dashboard(`Connected Project: ${project}`, `Auto-generated on first reported error/CI failure from "${project}".`, [
+      { type: 'visualization', id: metricId },
+      { type: 'visualization', id: timeseriesId },
+      { type: 'search', id: searchId },
+    ])
+  );
+
+  return { created: true, dashboardId };
+}

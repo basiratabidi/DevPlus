@@ -1,7 +1,8 @@
 import { createUser, upsertProfile, addEscalationContact } from './profileTool.js';
 import { reportIncident, listOpenIncidents, updateIncidentTiming } from './incidentTool.js';
 import { reportBlocker, listOpenBlockers, updateBlockerTiming } from './blockerTool.js';
-import { indexErrorLog } from '../services/opensearch/client.js';
+import { indexErrorLog, indexProjectErrorLog } from '../services/opensearch/client.js';
+import { ensureConnectedProjectDashboard } from '../services/opensearch/dashboardProvisioner.js';
 import { query } from '../db/pool.js';
 
 /**
@@ -67,6 +68,16 @@ export async function ingestProjectError({ project, level, message, stack, sourc
     await indexErrorLog({ project, level, message, stack, source });
   } catch (err) {
     console.error('Failed to index error log (non-blocking):', err);
+  }
+
+  // Per-project index + dashboard, auto-provisioned on this project's
+  // first-ever reported error/CI failure - see dashboardProvisioner.js.
+  // Best-effort: OSD being unreachable must never block error intake.
+  try {
+    await indexProjectErrorLog(project, { project, level, message, stack, source });
+    await ensureConnectedProjectDashboard(project);
+  } catch (err) {
+    console.error('Failed to provision per-project dashboard (non-blocking):', err);
   }
 
   const userId = await getOrCreateSystemUser();

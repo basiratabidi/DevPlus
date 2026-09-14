@@ -62,6 +62,14 @@
     </div>
   </div>
 
+  <div class="grid">
+    <div class="card" style="grid-column: 1 / -1;">
+      <h2>Connected projects</h2>
+      <div class="sub" style="margin-bottom:12px;">Each project gets its own OpenSearch index + dashboard, auto-provisioned on its first reported error/CI failure.</div>
+      <div id="projectsTable"></div>
+    </div>
+  </div>
+
 <script>
 async function refresh() {
   try {
@@ -102,12 +110,35 @@ async function refresh() {
     document.getElementById('errorsTable').innerHTML = '<div class="empty">Could not load (OpenSearch reachable?).</div>';
   }
 
+  try {
+    const { projects } = await fetch('/logs/errors-by-project').then(r => r.json());
+    document.getElementById('projectsTable').innerHTML = projects.length
+      ? renderTable(
+          projects.map(p => ({
+            project: p.project,
+            totalErrors: p.totalErrors,
+            levels: Object.entries(p.levels || {}).map(([lvl, n]) => `${lvl}: ${n}`).join(', '),
+            lastMessage: p.lastMessage,
+            lastSeen: p.lastSeen ? new Date(p.lastSeen).toLocaleString() : '',
+            dashboard: `<a class="osd-link" style="margin:0;padding:2px 8px;" href="/opensearch-dashboards/app/dashboards#/view/devpulse-project-${slugify(p.project)}-dashboard" target="_blank" rel="noopener">Open &rarr;</a>`,
+          })),
+          ['project', 'totalErrors', 'levels', 'lastMessage', 'lastSeen', 'dashboard']
+        )
+      : '<div class="empty">No connected projects have reported errors yet.</div>';
+  } catch {
+    document.getElementById('projectsTable').innerHTML = '<div class="empty">Could not load (OpenSearch reachable?).</div>';
+  }
+
   document.getElementById('lastUpdated').textContent = 'updated ' + new Date().toLocaleTimeString();
+}
+
+function slugify(project) {
+  return String(project).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown-project';
 }
 
 function renderTable(rows, cols) {
   const head = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
-  const body = rows.map(r => '<tr>' + cols.map(c => `<td class="${c === 'sha' ? 'mono' : ''}">${escapeHtml(String(r[c] ?? ''))}</td>`).join('') + '</tr>').join('');
+  const body = rows.map(r => '<tr>' + cols.map(c => `<td class="${c === 'sha' ? 'mono' : ''}">${c === 'dashboard' ? String(r[c] ?? '') : escapeHtml(String(r[c] ?? ''))}</td>`).join('') + '</tr>').join('');
   return `<table>${head}${body}</table>`;
 }
 

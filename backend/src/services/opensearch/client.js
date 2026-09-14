@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import { projectIndexName } from './dashboardProvisioner.js';
+
 /**
  * Thin OpenSearch REST client (no official SDK - same fetch-based
  * pattern as jiraClient.js). Security plugin is disabled on the local
@@ -189,4 +191,81 @@ export async function recentErrorLogs({ limit = 20 } = {}) {
 
   const data = await response.json();
   return data.hits.hits.map((hit) => hit._source);
+}
+
+/**
+ * Indexes the same error into a dedicated per-project index
+ * (`devpulse-project-<slug>`) - the shared `devpulse-error-logs` index
+ * above stays the cross-project audit trail; this one backs each
+ * connected project's own auto-provisioned dashboard (see
+ * `dashboardProvisioner.js`).
+ */
+export async function indexProjectErrorLog(project, errorLog) {
+  if (!isConfigured()) return null;
+
+  const response = await fetch(`${baseUrl()}/${projectIndexName(project)}/_doc`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...errorLog, timestamp: errorLog.timestamp || new Date().toISOString() }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`OpenSearch index failed: ${response.status} ${body}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Per-project breakdown of connected-project errors: total count, most
+ * recent error timestamp/message, and a level histogram - the "which
+ * connected project is noisiest / most recently broken" view that a
+ * flat recent-errors list doesn't answer on its own. Powers the status
+ * dashboard's "Connected Projects" section.
+ */
+export async function errorsByProject({ limit = 20 } = {}) {
+  if (!isConfigured()) return [];
+
+  const response = await fetch(`${baseUrl()}/${ERROR_LOGS_INDEX}/_search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      size: 0,
+      aggs: {
+        by_project: {
+          terms: { field: 'project.keyword', size: limit, order: { last_seen: 'desc' } },
+          aggs: {
+            last_seen: { max: { field: 'timestamp' } },
+            by_level: { terms: { field: 'level.keyword', size: 10 } },
+            latest_error: {
+              top_hits: { size: 1, sort: [{ timestamp: 'desc' }], _source: ['message', 'level', 'timestamp', 'source'] },
+            },
+          },
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    if (response.status === 404) return [];
+    const body = await response.text();
+    throw new Error(`OpenSearch search failed: ${response.status} ${body}`);
+  }
+
+  const data = await response.json();
+  const buckets = data.aggregations?.by_project?.buckets || [];
+
+  return buckets.map((bucket) => {
+    const latest = bucket.latest_error.hits.hits[0]?._source || {};
+    return {
+      project: bucket.key,
+      totalErrors: bucket.doc_count,
+      lastSeen: bucket.last_seen.value_as_string || latest.timestamp,
+      levels: Object.fromEntries(bucket.by_level.buckets.map((b) => [b.key, b.doc_count])),
+      lastMessage: latest.message,
+      lastLevel: latest.level,
+      lastSource: latest.source,
+    };
+  });
 }
