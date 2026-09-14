@@ -1,5 +1,5 @@
 # DevPulse Project Status
-*Updated 2026-09-11, 16 days to presentation (Sept 27)*
+*Updated 2026-09-14, 13 days to presentation (Sept 27)*
 
 ## What DevPulse is
 
@@ -178,13 +178,15 @@ not left behind as fake demo data.
   out to require a paid plan on this account, not free as first assumed
   - accepting the rotating URL and relying on the pre-demo checklist
   instead.
-- **Credential rotation**, Groq, WhatsApp access token, and Jira API
-  token are all rotated and directly verified (each against a real API
-  call on the new credential, not just assumed from a restart). The
-  WhatsApp **App Secret** is the one holdout, the value returned from
-  Meta's dashboard was identical to the old one, so it wasn't actually
-  regenerated; still exposed. See `docs/CREDENTIAL_ROTATION.md` for the
-  detail.
+- **Credential rotation**: **done**. Groq, WhatsApp access token, Jira
+  API token, and now the WhatsApp **App Secret** are all rotated and
+  directly verified (each against a real check on the new credential,
+  not just assumed from a restart) - the App Secret needed the actual
+  "Reset app secret" action (not just "Show", which only re-reveals the
+  current value), then was verified via three live requests against the
+  webhook's HMAC signature check: new-secret-signed accepted (200),
+  old-secret-signed rejected (401), unsigned rejected (401). See
+  `docs/CREDENTIAL_ROTATION.md` for the detail.
 - **Presentation materials**, `docs/DEMO_SCRIPT.md` now exists,
   grounded in real verified test cases from `docs/TESTING.md` (not
   invented dialogue), five flows: text logging, Urdu voice, duplicate
@@ -201,11 +203,21 @@ not left behind as fake demo data.
   set up, stick with the pre-demo checklist in §0 (re-verify and
   re-point the webhook manually before demos) rather than relying on a
   stable `BACKEND_URL`.
-- **Connected-project error intake**, code-level flow verified
-  end-to-end with a real synthetic error (see above). No genuine
-  external project has been wired up to call
-  `/logs/ingest-error` yet - this was verified by directly POSTing to
-  it, not by an actual connected project's real error-handler.
+- **Connected-project error intake**: code-level flow verified
+  end-to-end with a real synthetic error (see above), and now also with
+  a **genuine error from a real connected project**: `ai-services`
+  (`error_report.py`) reports its own real failures (e.g. a Groq
+  transcription rejecting an invalid audio file) via the exact same
+  `/logs/ingest-error` path a third-party team would use - confirmed via
+  a real triggered failure producing a real `P2` incident and Jira issue
+  (`SCRUM-15`), not a mock. `docs/CONNECTING_A_PROJECT.md` now exists as
+  a copy-paste-ready integration guide for handing to another team, with
+  two connection methods: a runtime error-handler snippet (Node/Python),
+  or a CI/CD-only option (a GitHub Actions job that fires `if: failure()`
+  and needs zero app code changes on the connected project's side -
+  mirrors DevPulse's own `log-commit-activity` CI job). No actual
+  third-party team's project has connected yet - that's still open, it
+  needs an external team to actually use it.
 
 ---
 
@@ -214,8 +226,9 @@ not left behind as fake demo data.
 Nearly everything functional is done, this is now mostly a
 rehearsal/polish list, not a build list.
 
-1. **This week:** rotate credentials (`docs/CREDENTIAL_ROTATION.md`,
-   mostly done, App Secret is the one holdout).
+1. **Done:** credential rotation (`docs/CREDENTIAL_ROTATION.md`) - all
+   three (Groq, WhatsApp access token, WhatsApp App Secret, Jira) rotated
+   and verified.
 2. **Next:** run `docs/LIVE_TEST_CHECKLIST.md` (needs a second phone),
    escalation live-notify and a multi-user pass.
 3. **Final week:** slides (demo script and talking points are already

@@ -135,6 +135,10 @@ export async function runOnboarding({ phoneNumber, message, existingUserId }) {
       messages,
       tools: toolDefinitions,
       tool_choice: 'auto',
+      // gpt-oss is a reasoning model - without this, its internal
+      // "thinking" text can leak straight into `content` and get sent
+      // to the user verbatim instead of just the final reply.
+      reasoning_format: 'hidden',
     });
 
     const responseMessage = completion.choices[0].message;

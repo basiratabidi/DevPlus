@@ -195,7 +195,9 @@ external integrations like Jira).
 
 Distinct from §4a: this is for real errors happening in **someone
 else's project** (a team's own app/service), not DevPulse's own code.
-A connected project's own error-handler or CI POSTs to:
+See `docs/CONNECTING_A_PROJECT.md` for a copy-paste-ready Node/Python
+client to hand to another team. A connected project's own error-handler
+or CI POSTs to:
 
 ```
 POST /logs/ingest-error

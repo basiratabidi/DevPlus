@@ -41,7 +41,14 @@ app.use(
 app.use(webhookRouter);
 app.use(cronRouter);
 app.use(logsRouter);
-app.use('/dashboard', express.static(path.join(__dirname, '../public')));
+
+// /dashboard goes straight to the OpenSearch Dashboards "DevPulse Overview"
+// dashboard (built from the three indexed logs). The earlier lightweight
+// custom status page still lives at /dashboard/status.
+app.get(['/dashboard', '/dashboard/'], (req, res) => {
+  res.redirect('/opensearch-dashboards/app/dashboards#/view/devpulse-overview');
+});
+app.use('/dashboard/status', express.static(path.join(__dirname, '../public')));
 
 app.get('/health', (req, res) => res.send('ok'));
 

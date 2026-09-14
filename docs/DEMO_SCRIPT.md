@@ -102,19 +102,38 @@ show it update in real time.
 
 ## 7. Automatic error intake from a connected project (~1-2 min, optional)
 
-From a terminal (prepared beforehand), send a real POST simulating an
-external project's own error handler:
+Two ways to show this, pick based on time/prep:
+
+**7a. A genuinely connected project (`ai-services`)**: from a terminal,
+trigger a real failure in DevPulse's own AI service, e.g. send it an
+invalid audio file:
+```bash
+curl -X POST <ai-services-url>/transcribe -F "file=@not_real_audio.ogg;type=audio/ogg"
+```
+This isn't a simulation - `ai-services/error_report.py` reports its
+*own real* failure to `/logs/ingest-error`, the exact same path an
+external team's project would use (see `docs/CONNECTING_A_PROJECT.md`).
+Verified live during development: a real `P2` incident and a real Jira
+issue were created from this exact call.
+
+**7b. Simulating an external team's project**, useful if you want to
+show a project name other than `ai-services`:
 ```bash
 curl -X POST <backend-url>/logs/ingest-error \
   -H "Content-Type: application/json" \
   -H "x-log-ingest-secret: <LOG_INGEST_SECRET>" \
   -d '{"project":"<real or plausible project name>","level":"critical","message":"...","stack":"..."}'
 ```
+Frame this as: "this is the same call your own CI/CD would make -
+`docs/CONNECTING_A_PROJECT.md` has a drop-in GitHub Actions job so a
+connected team doesn't even need to change app code, just add one job
+that fires `if: failure()`, mirroring how DevPulse already reports its
+own commits via CI (`log-commit-activity`)."
 
-**Expect**: a real incident appears (check the dashboard or ask the
-agent "any recent errors?"), a real escalation WhatsApp message fires
-(same pipeline as step 5's P1), and a real Jira issue gets created (same
-pipeline as step 4).
+**Expect** (either path): a real incident appears (check the dashboard
+or ask the agent "any recent errors?"), a real escalation WhatsApp
+message fires (same pipeline as step 5's P1), and a real Jira issue gets
+created (same pipeline as step 4).
 
 Say while waiting: this reuses `reportIncident`/`reportBlocker`
 directly - there's no separate "auto-escalation" logic to keep in sync

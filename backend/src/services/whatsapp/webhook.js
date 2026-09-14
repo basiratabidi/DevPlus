@@ -70,7 +70,14 @@ function isDuplicateMessage(messageId) {
 webhookRouter.post('/webhook/whatsapp', async (req, res) => {
   try {
     if (!isValidSignature(req)) {
-      console.warn('Rejected webhook: invalid signature');
+      console.warn(
+        'Rejected webhook: invalid signature. The payload Meta sent was not signed with the ' +
+        'current WHATSAPP_APP_SECRET in .env. Likely causes: (1) WHATSAPP_APP_SECRET in .env ' +
+        "doesn't match Meta's App Secret (check Meta App dashboard -> Settings -> Basic), or " +
+        '(2) you recently reset the App Secret and the change hasn\'t propagated to Meta\'s ' +
+        'webhook-signing system yet (can lag behind what the dashboard shows) - wait a few ' +
+        'minutes and retry before assuming .env is wrong.'
+      );
       return res.sendStatus(401);
     }
 

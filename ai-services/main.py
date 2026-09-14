@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from transcribe import transcribe_audio
 from text_to_speech import text_to_speech
+from error_report import report_error
 
 app = FastAPI(title="DevPulse AI Service")
 
@@ -20,6 +21,7 @@ async def transcribe(file: UploadFile = File(...)):
         text = transcribe_audio(buffer, file.content_type or "audio/ogg")
         return {"text": text}
     except Exception as e:
+        report_error("/transcribe", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -34,4 +36,5 @@ def speak(req: SpeakRequest):
         audio_bytes = text_to_speech(req.text, req.known_lang)
         return Response(content=audio_bytes, media_type="audio/mpeg")
     except Exception as e:
+        report_error("/speak", e)
         raise HTTPException(status_code=500, detail=str(e))

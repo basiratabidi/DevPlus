@@ -18,20 +18,25 @@ on them; Jira last since it's optional (unset = feature no-ops cleanly).
    agent code path (`runAgent`) tested directly and returned a real LLM
    response on the new key.
 
-## 2. WhatsApp access token + app secret (⚠️ partially done)
+## 2. WhatsApp access token + app secret (✅ done)
 1. Meta App dashboard → your app (DevPlus) → System Users → the
    permanent System User token: regenerate it. **Done** - updated in
    `backend/.env`, backend restarted, and verified via a real read-only
    Graph API call against the phone number ID (confirmed the new token
    authenticates).
-2. Settings → Basic → App Secret: click "Show", regenerate if the option
-   is available. **Not actually rotated**: the value pasted back was
-   byte-for-byte identical to the existing one, meaning Meta's "Show"
-   button re-revealed the current secret rather than generating a new
-   one. Needs a real "Reset"/regenerate action on Meta's side if one
-   exists in the dashboard; if Meta has no such option for App Secret
-   short of a broader app reset, that's a real constraint to note rather
-   than something still pending indefinitely.
+2. Settings → Basic → App Secret: "Show" alone only re-reveals the
+   current value - the actual action is **Reset app secret** (separate
+   button), with a grace-period prompt for how long the old secret keeps
+   working. Used a 0-hour grace period since the old value was already
+   exposed and we restarted immediately after. **Done** - new value
+   saved directly to `backend/.env` (never pasted into a chat/log after
+   the reset), backend restarted, and verified with three direct
+   requests against the live webhook signature check
+   (`webhook.js`/`isValidSignature`): a payload signed with the new
+   secret was accepted (200), the same payload signed with the *old*
+   secret was rejected (401), and an unsigned request was rejected
+   (401) - confirming the old secret is genuinely dead server-side, not
+   just cosmetically replaced.
 
 ## 3. Jira API token (✅ done)
 1. https://id.atlassian.com/manage-profile/security/api-tokens → revoke
@@ -46,9 +51,7 @@ on them; Jira last since it's optional (unset = feature no-ops cleanly).
 ## Status
 - Groq: ✅ rotated and verified.
 - WhatsApp access token: ✅ rotated and verified.
-- WhatsApp App Secret: ⚠️ not actually rotated, the value Meta returned
-  was identical to the old one (see §2 above). Still exposed; revisit
-  if Meta's dashboard turns out to have a real regenerate option.
+- WhatsApp App Secret: ✅ rotated and verified (see §2 above).
 - Jira API token: ✅ rotated and verified.
 
 ## After rotating all three

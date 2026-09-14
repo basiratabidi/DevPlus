@@ -354,6 +354,10 @@ export async function runAgent({ userId, message }) {
         model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
         messages,
         ...(toolsAvailable ? { tools: availableToolDefs, tool_choice: 'auto' } : {}),
+        // gpt-oss is a reasoning model - without this, its internal
+        // "thinking" text can leak straight into `content` and get sent
+        // to the user verbatim instead of just the final reply.
+        reasoning_format: 'hidden',
       });
     } catch (err) {
       // Covers the case where the model tries to call a tool anyway on the

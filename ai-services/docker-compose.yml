@@ -9,6 +9,11 @@ services:
     volumes:
       - ./:/app
       - hf_cache:/root/.cache/huggingface
+    # Needed so this container can reach the DevPulse backend, which runs
+    # as a host process (not dockerized), at host.docker.internal:3000 -
+    # plain "localhost" inside a container means the container itself.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
   urdu-llm:
