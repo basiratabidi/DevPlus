@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { projectIndexName } from './dashboardProvisioner.js';
+import { projectIndexName, slugifyProject } from './dashboardProvisioner.js';
 
 /**
  * Thin OpenSearch REST client (no official SDK - same fetch-based
@@ -266,6 +266,9 @@ export async function errorsByProject({ limit = 20 } = {}) {
       lastMessage: latest.message,
       lastLevel: latest.level,
       lastSource: latest.source,
+      // Computed here (not re-derived client-side) since the id includes
+      // a hash of the exact project string - see slugifyProject().
+      dashboardId: `devpulse-project-${slugifyProject(bucket.key)}-dashboard`,
     };
   });
 }

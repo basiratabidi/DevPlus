@@ -18,6 +18,8 @@
  * `SERVER_REWRITEBASEPATH=false` in docker-compose.yml.
  */
 
+import crypto from 'crypto';
+
 function osdBaseUrl() {
   return (process.env.OPENSEARCH_DASHBOARDS_URL || 'http://localhost:5601').replace(/\/$/, '');
 }
@@ -26,12 +28,21 @@ function isConfigured() {
   return Boolean(process.env.OPENSEARCH_URL);
 }
 
-/** "My App!" -> "my-app" - used in index names and saved-object ids. */
+/**
+ * "Payments Service" -> "payments-service-a1b2c3". Lowercasing +
+ * collapsing punctuation to "-" is lossy - "Payments Service" and
+ * "payments-service" would otherwise both slugify to "payments-service"
+ * and silently share one index/dashboard. Appending a short hash of the
+ * exact (case-sensitive) project string keeps the id human-readable
+ * while guaranteeing two different project names never collide.
+ */
 export function slugifyProject(project) {
-  return String(project)
+  const base = String(project)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'unknown-project';
+  const hash = crypto.createHash('sha1').update(String(project)).digest('hex').slice(0, 6);
+  return `${base}-${hash}`;
 }
 
 export function projectIndexName(project) {

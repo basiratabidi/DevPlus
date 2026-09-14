@@ -120,7 +120,7 @@ async function refresh() {
             levels: Object.entries(p.levels || {}).map(([lvl, n]) => `${lvl}: ${n}`).join(', '),
             lastMessage: p.lastMessage,
             lastSeen: p.lastSeen ? new Date(p.lastSeen).toLocaleString() : '',
-            dashboard: `<a class="osd-link" style="margin:0;padding:2px 8px;" href="/opensearch-dashboards/app/dashboards#/view/devpulse-project-${slugify(p.project)}-dashboard" target="_blank" rel="noopener">Open &rarr;</a>`,
+            dashboard: `<a class="osd-link" style="margin:0;padding:2px 8px;" href="/opensearch-dashboards/app/dashboards#/view/${p.dashboardId}" target="_blank" rel="noopener">Open &rarr;</a>`,
           })),
           ['project', 'totalErrors', 'levels', 'lastMessage', 'lastSeen', 'dashboard']
         )
@@ -130,10 +130,6 @@ async function refresh() {
   }
 
   document.getElementById('lastUpdated').textContent = 'updated ' + new Date().toLocaleTimeString();
-}
-
-function slugify(project) {
-  return String(project).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown-project';
 }
 
 function renderTable(rows, cols) {
