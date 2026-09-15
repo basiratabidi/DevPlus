@@ -87,15 +87,19 @@ export async function ingestProjectError({ project, level, message, stack, sourc
   // create a new record every time it fires - refresh timing on the
   // existing open one instead, same reasoning as the agent's own
   // duplicate-incident confirmation flow (just without asking, since
-  // there's no human in this loop to ask).
-  const openIncidents = await listOpenIncidents({ userId });
+  // there's no human in this loop to ask). Scoped by projectName (the
+  // same shared `projects` table a human WhatsApp report uses) on top of
+  // the title match, not just the title string - so this can never
+  // accidentally match/update a similarly-worded record that actually
+  // belongs to a different project.
+  const openIncidents = await listOpenIncidents({ userId, projectName: project });
   const existingIncident = openIncidents.find((i) => i.title === title);
   if (existingIncident) {
     const result = await updateIncidentTiming({ incidentId: existingIncident.id });
     return { action: 'updated_incident', incidentId: existingIncident.id, ...result };
   }
 
-  const openBlockers = await listOpenBlockers({ userId });
+  const openBlockers = await listOpenBlockers({ userId, projectName: project });
   const existingBlocker = openBlockers.find((b) => b.description === title);
   if (existingBlocker) {
     const result = await updateBlockerTiming({ blockerId: existingBlocker.id });
@@ -110,11 +114,12 @@ export async function ingestProjectError({ project, level, message, stack, sourc
       description: stack || message,
       severity,
       affectedSystem: project,
+      projectName: project,
     });
     return { action: 'created_incident', severity, ...incident };
   }
 
   const severity = mapToBlockerSeverity(level);
-  const blocker = await reportBlocker({ userId, description: title, severity });
+  const blocker = await reportBlocker({ userId, description: title, severity, projectName: project });
   return { action: 'created_blocker', severity, ...blocker };
 }

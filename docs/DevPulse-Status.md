@@ -130,6 +130,26 @@ the actual running dev instance** (not just the earlier isolated test):
 reached live through the real ngrok tunnel at
 `/opensearch-dashboards/app/home#/`, publicly, not just on localhost.
 
+### Project scoping
+Every logged item (task update, incident, blocker, deployment) is now
+tied to a project via a new shared `projects` table (team-wide, not
+per-user - a project name one user reports against is reused by any
+other user or connected system, not treated as separate). Duplicate-
+detection now scopes by project **and** user, not user alone: two
+different users (or the same user) reporting a similarly-worded incident
+for two *different* projects are correctly treated as unrelated, while a
+genuine re-report within the same project still triggers the existing
+confirm-before-writing flow. Unified with the connected-external-project
+error intake below - a human reporting against a project name and an
+external system auto-reporting against that same name resolve to the
+exact same project row, not a separate lookalike. Verified end-to-end,
+scripted and live: cross-project false-positive avoided, same-project
+duplicate correctly caught, and a real POST to `/logs/ingest-error`
+confirmed sharing `project_id` with a human-created incident for the
+same project name (2026-09-15). If a project isn't already established
+in conversation, the agent calls a new `listProjects` tool and asks,
+rather than guessing.
+
 ### Automatic error intake from connected external projects
 A distinct capability from the above: this is for real errors from a
 **team's own external project** (not DevPulse's own code), POSTed to
@@ -162,12 +182,15 @@ not left behind as fake demo data.
 
 ## Genuinely still open
 
-- **Escalation contact live-notify with a real second number**, the
-  code path sends a real WhatsApp message, but this hasn't been
-  confirmed against an actual second WhatsApp number receiving it.
-  Step-by-step in `docs/LIVE_TEST_CHECKLIST.md` section A, needs you to
-  actually run it with a second phone; not something that can be
-  verified without one.
+- **Escalation contact live-notify**: **done**. Confirmed live during
+  the multi-user test (2026-09-15) - Zehra's P1 incident ("Payment
+  gateway down") correctly triggered a real `escalation_events` row and
+  a real WhatsApp message to her configured contact (Basirat,
+  923392001026). A third verified test number (a non-test-user contact,
+  e.g. "Sajjad") was considered but deliberately dropped - the
+  already-confirmed real send to a real second number is sufficient
+  coverage for this, not worth spending more of Meta's 5-recipient
+  test-mode cap on.
 - **Multi-user testing**, all testing to date has been single-user.
   Step-by-step in `docs/LIVE_TEST_CHECKLIST.md` section B, same
   constraint, needs a second real device.
@@ -227,13 +250,14 @@ Nearly everything functional is done, this is now mostly a
 rehearsal/polish list, not a build list.
 
 1. **Done:** credential rotation (`docs/CREDENTIAL_ROTATION.md`) - all
-   three (Groq, WhatsApp access token, WhatsApp App Secret, Jira) rotated
+   four (Groq, WhatsApp access token, WhatsApp App Secret, Jira) rotated
    and verified.
-2. **Next:** run `docs/LIVE_TEST_CHECKLIST.md` (needs a second phone),
-   escalation live-notify and a multi-user pass.
-3. **Final week:** slides (demo script and talking points are already
-   written in `docs/DEMO_SCRIPT.md`), then rehearse the five flows in
-   that script end to end at least once before the actual presentation.
+2. **Done:** `docs/LIVE_TEST_CHECKLIST.md` - escalation live-notify and
+   a multi-user pass both confirmed live with real second-number/second-
+   identity traffic (2026-09-15).
+3. **Next:** slides (demo script and talking points are already written
+   in `docs/DEMO_SCRIPT.md`), then rehearse the five flows in that
+   script end to end at least once before the actual presentation.
 
 ---
 

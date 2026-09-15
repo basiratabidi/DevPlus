@@ -114,6 +114,25 @@ ALTER TABLE incidents ADD COLUMN IF NOT EXISTS jira_issue_key VARCHAR(20);
 ALTER TABLE blockers ADD COLUMN IF NOT EXISTS jira_issue_key VARCHAR(20);
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_missed_checkin_alert DATE;
 
+-- Projects: a shared, team-wide list (not per-user). A logged item
+-- (task/incident/blocker/deployment) can be tied to one, so
+-- duplicate-detection and reporting are scoped per-project as well as
+-- per-user - two different users each reporting "DB down" for two
+-- DIFFERENT projects shouldn't be treated as related. The connected-
+-- external-project error intake (system-monitoring user,
+-- errorIngestTool.js) shares this same table rather than just encoding
+-- the project name as a string prefix in the incident/blocker title.
+CREATE TABLE IF NOT EXISTS projects (
+    id         SERIAL PRIMARY KEY,
+    name       VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE task_logs ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES projects(id);
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES projects(id);
+ALTER TABLE blockers ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES projects(id);
+ALTER TABLE deployments ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES projects(id);
+
 
 -- ============================================================
 -- FULL CLEAN SEED, wipes existing test junk, rebuilds cleanly

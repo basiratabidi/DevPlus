@@ -1,10 +1,11 @@
 import { query } from '../db/pool.js';
 import { scheduleReminder } from './reminderTool.js';
+import { getOrCreateProject } from './projectTool.js';
 
 const VALID_ENVIRONMENTS = ['staging', 'production'];
 const VALID_STATUSES = ['scheduled', 'success', 'failed', 'rolled_back'];
 
-export async function logDeployment({ userId, serviceName, environment, status, scheduledFor = null, notes = null }) {
+export async function logDeployment({ userId, serviceName, environment, status, scheduledFor = null, notes = null, projectName = null }) {
   status = status ?? 'scheduled';
   notes = notes ?? null;
 
@@ -14,11 +15,12 @@ export async function logDeployment({ userId, serviceName, environment, status, 
   if (!VALID_STATUSES.includes(status)) {
     throw new Error(`status must be one of ${VALID_STATUSES.join(', ')}`);
   }
+  const project = await getOrCreateProject({ name: projectName });
   const result = await query(
-    `INSERT INTO deployments (user_id, service_name, environment, status, scheduled_for, notes)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO deployments (user_id, service_name, environment, status, scheduled_for, notes, project_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING id, scheduled_for`,
-    [userId, serviceName, environment, status, scheduledFor, notes]
+    [userId, serviceName, environment, status, scheduledFor, notes, project?.id ?? null]
   );
 
   if (status === 'scheduled' && scheduledFor) {

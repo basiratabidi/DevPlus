@@ -188,6 +188,46 @@ function recentErrorsSearch(indexPatternId, title) {
   };
 }
 
+/**
+ * The classic Dashboards/Visualize objects above are a completely
+ * separate store from the Observability app's "Logs" page (Applications/
+ * Logs/Metrics/Traces in the left nav) - that page lists PPL "saved
+ * queries", kept in their own index and reached through
+ * `/api/observability/event_analytics/saved_objects*`, not
+ * `/api/saved_objects`. Without one of these, a project's data exists in
+ * OpenSearch but never shows up under Observability > Logs even though
+ * its classic dashboard works fine.
+ */
+async function findObservabilityQueryByName(name) {
+  const res = await fetch(`${osdBaseUrl()}/api/observability/event_analytics/saved_objects?objectType=savedQuery`);
+  if (!res.ok) throw new Error(`OSD event_analytics list failed: ${res.status} ${await res.text()}`);
+  const data = await res.json();
+  return (data.observabilityObjectList || []).find((o) => o.savedQuery?.name === name) || null;
+}
+
+export async function ensureObservabilityLogQuery({ name, description, query, dateStart = 'now-90d' }) {
+  const existing = await findObservabilityQueryByName(name);
+  if (existing) return { created: false, objectId: existing.objectId };
+
+  const res = await fetch(`${osdBaseUrl()}/api/observability/event_analytics/saved_objects/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'osd-xsrf': 'true' },
+    body: JSON.stringify({
+      object: {
+        query,
+        selected_date_range: { start: dateStart, end: 'now', text: '' },
+        selected_timestamp: { name: 'timestamp', type: 'timestamp' },
+        selected_fields: { tokens: [], text: '' },
+        name,
+        description,
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`OSD create saved query failed: ${res.status} ${await res.text()}`);
+  const data = await res.json();
+  return { created: true, objectId: data.objectId };
+}
+
 function dashboard(title, description, panelRefs) {
   const panelsJSON = panelRefs.map((ref, i) => ({
     version: '2.17.0',
@@ -215,42 +255,58 @@ function dashboard(title, description, panelRefs) {
 }
 
 /**
- * Idempotent: does nothing if this project's index-pattern already
- * exists. Best-effort by design (same reasoning as Jira/escalation
- * integrations elsewhere) - OSD being unreachable must never break
- * error ingestion, so callers should catch and log, not propagate.
+ * Provisions two independent things for a connected project, each
+ * idempotent on its own (checked separately, not gated behind one
+ * shared guard) - a project whose classic dashboard was created by an
+ * older deploy/before this function existed must still be able to pick
+ * up its missing Observability entry on a later call, rather than being
+ * stuck without one forever because "the index-pattern already exists"
+ * short-circuited everything else. Best-effort throughout (same
+ * reasoning as Jira/escalation integrations elsewhere) - OSD being
+ * unreachable must never break error ingestion, so callers should catch
+ * and log, not propagate.
  */
 export async function ensureConnectedProjectDashboard(project) {
   if (!isConfigured()) return null;
 
   const slug = slugifyProject(project);
   const indexPatternId = `devpulse-project-${slug}`;
-
-  const existing = await osdGet('index-pattern', indexPatternId);
-  if (existing) return { created: false, dashboardId: `devpulse-project-${slug}-dashboard` };
-
-  await osdPut('index-pattern', indexPatternId, {
-    attributes: { title: `${indexPatternId}*`, timeFieldName: 'timestamp', fields: '[]' },
-    references: [],
-  });
-
-  const metricId = `devpulse-project-${slug}-metric`;
-  const timeseriesId = `devpulse-project-${slug}-timeseries`;
-  const searchId = `devpulse-project-${slug}-search`;
   const dashboardId = `devpulse-project-${slug}-dashboard`;
 
-  await osdPut('visualization', metricId, metricVisualization(indexPatternId, `Total Errors — ${project}`));
-  await osdPut('visualization', timeseriesId, timeseriesVisualization(indexPatternId, `Errors per day — ${project}`));
-  await osdPut('search', searchId, recentErrorsSearch(indexPatternId, `${project} — Recent Errors`));
-  await osdPut(
-    'dashboard',
-    dashboardId,
-    dashboard(`Connected Project: ${project}`, `Auto-generated on first reported error/CI failure from "${project}".`, [
-      { type: 'visualization', id: metricId },
-      { type: 'visualization', id: timeseriesId },
-      { type: 'search', id: searchId },
-    ])
-  );
+  const existingIndexPattern = await osdGet('index-pattern', indexPatternId);
+  if (!existingIndexPattern) {
+    await osdPut('index-pattern', indexPatternId, {
+      attributes: { title: `${indexPatternId}*`, timeFieldName: 'timestamp', fields: '[]' },
+      references: [],
+    });
 
-  return { created: true, dashboardId };
+    const metricId = `devpulse-project-${slug}-metric`;
+    const timeseriesId = `devpulse-project-${slug}-timeseries`;
+    const searchId = `devpulse-project-${slug}-search`;
+
+    await osdPut('visualization', metricId, metricVisualization(indexPatternId, `Total Errors — ${project}`));
+    await osdPut('visualization', timeseriesId, timeseriesVisualization(indexPatternId, `Errors per day — ${project}`));
+    await osdPut('search', searchId, recentErrorsSearch(indexPatternId, `${project} — Recent Errors`));
+    await osdPut(
+      'dashboard',
+      dashboardId,
+      dashboard(`Connected Project: ${project}`, `Auto-generated on first reported error/CI failure from "${project}".`, [
+        { type: 'visualization', id: metricId },
+        { type: 'visualization', id: timeseriesId },
+        { type: 'search', id: searchId },
+      ])
+    );
+  }
+
+  // Also register under Observability > Logs (separate PPL-backed store -
+  // see ensureObservabilityLogQuery's comment) so the project's errors
+  // are browsable from there too, not just the classic Dashboards view.
+  // Checked/created independently of the block above (see doc comment).
+  await ensureObservabilityLogQuery({
+    name: `${project} — Logs`,
+    description: `Auto-generated on first reported error/CI failure from "${project}".`,
+    query: `source = ${indexPatternId}`,
+  });
+
+  return { created: !existingIndexPattern, dashboardId };
 }

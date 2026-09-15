@@ -9,6 +9,7 @@ import { reportIncident, listOpenIncidents, updateIncidentTiming } from '../tool
 import { reportBlocker, listOpenBlockers, updateBlockerTiming } from '../tools/blockerTool.js';
 import { sendBlockersPdf } from '../tools/blockerPdfTool.js';
 import { logDeployment, listUpcomingDeployments } from '../tools/deploymentTool.js';
+import { listProjects } from '../tools/projectTool.js';
 import { getHistory as getDbHistory } from '../tools/historyTool.js';
 import { sendHistoryPdf } from '../tools/historyPdfTool.js';
 import { queryProjectActivity, queryRecentErrors } from '../tools/projectActivityTool.js';
@@ -31,6 +32,14 @@ const toolDefinitions = [
   {
     type: 'function',
     function: {
+      name: 'listProjects',
+      description: "List all known projects (shared across the whole team, not per-user) - call this when you need to ask the user which project something is for, so you can offer the existing list rather than asking blind. Naming a project not in this list is fine too - it gets created automatically.",
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'logTask',
       description: 'Log a status update / summary of work done',
       parameters: {
@@ -38,8 +47,9 @@ const toolDefinitions = [
         properties: {
           summary: { type: 'string' },
           taskRef: { type: ['string', 'null'] },
+          projectName: { type: 'string', description: 'Which project this is for - required, ask the user if not already established this conversation' },
         },
-        required: ['summary'],
+        required: ['summary', 'projectName'],
       },
     },
   },
@@ -55,8 +65,9 @@ const toolDefinitions = [
           description: { type: ['string', 'null'] },
           severity: { type: 'string', enum: ['P1', 'P2', 'P3', 'P4'] },
           affectedSystem: { type: ['string', 'null'] },
+          projectName: { type: 'string', description: 'Which project this is for - required, ask the user if not already established this conversation' },
         },
-        required: ['title', 'severity'],
+        required: ['title', 'severity', 'projectName'],
       },
     },
   },
@@ -64,8 +75,13 @@ const toolDefinitions = [
     type: 'function',
     function: {
       name: 'listOpenIncidents',
-      description: "List the user's currently open (non-resolved) incidents - use this to check for a similar already-open incident before calling reportIncident, so the same real-world incident doesn't get logged twice",
-      parameters: { type: 'object', properties: {} },
+      description: "List the user's currently open (non-resolved) incidents - use this to check for a similar already-open incident before calling reportIncident, so the same real-world incident doesn't get logged twice. Always pass projectName once known - an incident for a different project should never count as a duplicate match.",
+      parameters: {
+        type: 'object',
+        properties: {
+          projectName: { type: ['string', 'null'], description: 'Scope the check to this project - omit only if no project is established yet' },
+        },
+      },
     },
   },
   {
@@ -92,8 +108,9 @@ const toolDefinitions = [
         properties: {
           description: { type: 'string' },
           severity: { type: ['string', 'null'], enum: ['low', 'medium', 'high', null] },
+          projectName: { type: 'string', description: 'Which project this is for - required, ask the user if not already established this conversation' },
         },
-        required: ['description'],
+        required: ['description', 'projectName'],
       },
     },
   },
@@ -101,8 +118,13 @@ const toolDefinitions = [
     type: 'function',
     function: {
       name: 'listOpenBlockers',
-      description: "List the user's currently open blockers",
-      parameters: { type: 'object', properties: {} },
+      description: "List the user's currently open blockers. Always pass projectName once known - a blocker for a different project should never count as a duplicate match.",
+      parameters: {
+        type: 'object',
+        properties: {
+          projectName: { type: ['string', 'null'], description: 'Scope the check to this project - omit only if no project is established yet' },
+        },
+      },
     },
   },
   {
@@ -151,8 +173,9 @@ const toolDefinitions = [
               'any usable time at all, do not call this tool yet - ask the user for it first.',
           },
           notes: { type: ['string', 'null'] },
+          projectName: { type: 'string', description: 'Which project this is for - required, ask the user if not already established this conversation' },
         },
-        required: ['serviceName', 'environment', 'scheduledFor'],
+        required: ['serviceName', 'environment', 'scheduledFor', 'projectName'],
       },
     },
   },
@@ -214,12 +237,13 @@ const toolDefinitions = [
 ];
 
 const TOOL_IMPL = {
+  listProjects: () => listProjects(),
   logTask: (userId, args) => logTask({ userId, ...args }),
   reportIncident: (userId, args) => reportIncident({ userId, ...args }),
-  listOpenIncidents: (userId) => listOpenIncidents({ userId }),
+  listOpenIncidents: (userId, args) => listOpenIncidents({ userId, projectName: args?.projectName ?? null }),
   updateIncidentTiming: (userId, args) => updateIncidentTiming({ incidentId: args.incidentId }),
   reportBlocker: (userId, args) => reportBlocker({ userId, ...args }),
-  listOpenBlockers: (userId) => listOpenBlockers({ userId }),
+  listOpenBlockers: (userId, args) => listOpenBlockers({ userId, projectName: args?.projectName ?? null }),
   updateBlockerTiming: (userId, args) => updateBlockerTiming({ blockerId: args.blockerId }),
   sendBlockersPdf: (userId) => sendBlockersPdf({ userId }),
   logDeployment: (userId, args) => logDeployment({ userId, ...args }),
@@ -279,6 +303,23 @@ export function describeToolResult(name, args, result) {
     default:
       return null;
   }
+}
+
+// Detects the specific failure mode reproduced live: gpt-oss-120b
+// occasionally emits a long run of short, filler/self-correction
+// fragments ("Sorry...", "Looks...", "Apologies...") before finally
+// settling on a real answer, even with reasoning_format: 'hidden'. A
+// normal confirmation reply is one to a few sentences, not a wall of
+// near-empty lines - use that shape difference rather than trying to
+// enumerate every possible filler phrase.
+function looksGarbled(text) {
+  if (!text) return false;
+  const ellipsisCount = (text.match(/\.\.\.|…/g) || []).length;
+  const nonEmptyLines = text.split('\n').filter((l) => l.trim().length > 0);
+  const fillerLines = nonEmptyLines.filter((l) =>
+    /^(sorry|apologi|looks?( like)?|it looks|we\b)/i.test(l.trim())
+  ).length;
+  return ellipsisCount > 6 || nonEmptyLines.length > 12 || fillerLines > 2;
 }
 
 // Some requests need more than one tool call in sequence (e.g. look up a
@@ -374,7 +415,21 @@ export async function runAgent({ userId, message }) {
     const toolCalls = responseMessage.tool_calls;
 
     if (!toolCalls || toolCalls.length === 0) {
-      reply = responseMessage.content ?? "Sorry, I didn't catch that.";
+      const content = responseMessage.content;
+      if (looksGarbled(content)) {
+        // Reproduced live: gpt-oss-120b occasionally produces a long run
+        // of filler/self-correction fragments ("Sorry... Looks...
+        // Apologies...") on the confirmation turn right after a tool
+        // call, even with reasoning_format: 'hidden'. The tool call
+        // itself is unaffected (the DB write is already correct by this
+        // point) - only the free-text confirmation is at risk. Fall back
+        // to the deterministic, tool-result-based description instead of
+        // ever showing this to the user.
+        console.warn('Garbled model output detected, using deterministic fallback. Raw:', JSON.stringify(content).slice(0, 300));
+        reply = confirmations.length > 0 ? confirmations.join(' ') : "Done - let me know if you need anything else.";
+      } else {
+        reply = content ?? "Sorry, I didn't catch that.";
+      }
       break;
     }
 

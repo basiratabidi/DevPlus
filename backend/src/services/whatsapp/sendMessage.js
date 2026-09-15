@@ -43,6 +43,36 @@ function describeGraphApiError(status, bodyText) {
   return known ? `${base}\n  -> ${known}` : base;
 }
 
+// WhatsApp has its own lightweight formatting syntax, different from the
+// standard Markdown the model naturally writes - most visibly, bold is a
+// single *asterisk* pair, not **double**. Sent as-is, "**P1**" shows up
+// to the user as the literal characters "**P1**", not bold text
+// (reproduced live). This is a defensive backstop independent of the
+// system prompt's own formatting instructions - the model doesn't always
+// follow those exactly (see the garbled-output fallback in graph.js for
+// the same reasoning), so every outgoing text message gets converted
+// here regardless of where it came from (agent, onboarding, error
+// fallbacks all funnel through this one function).
+function formatForWhatsApp(text) {
+  if (!text) return text;
+  return text
+    // **bold** / __bold__ -> *bold* (WhatsApp's actual bold syntax)
+    .replace(/\*\*(.+?)\*\*/g, '*$1*')
+    .replace(/__(.+?)__/g, '*$1*')
+    // Markdown headers ("# Title") -> just bold the text, drop the hashes
+    .replace(/^#{1,6}\s*(.+)$/gm, '*$1*')
+    // Markdown links [text](url) -> "text (url)" - WhatsApp doesn't
+    // render link syntax, it would otherwise show the brackets literally
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1 ($2)')
+    // Inline `code` -> plain text (single backticks aren't rendered as
+    // monospace on WhatsApp, only triple-backtick blocks are - leave
+    // those alone)
+    .replace(/(?<!`)`([^`\n]+)`(?!`)/g, '$1')
+    // Collapse 3+ blank lines down to a normal paragraph break
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export async function sendWhatsAppMessage({ to, text }) {
   const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
 
@@ -56,7 +86,7 @@ export async function sendWhatsAppMessage({ to, text }) {
       messaging_product: 'whatsapp',
       to,
       type: 'text',
-      text: { body: text },
+      text: { body: formatForWhatsApp(text) },
     }),
   });
 

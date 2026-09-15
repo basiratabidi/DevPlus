@@ -1,19 +1,21 @@
 import { query } from '../db/pool.js';
 import { evaluateEscalation } from './escalationRuleTool.js';
 import { createJiraIssue } from '../services/jira/jiraClient.js';
+import { getOrCreateProject } from './projectTool.js';
 
 const VALID_SEVERITIES = ['low', 'medium', 'high'];
 
-export async function reportBlocker({ userId, description, severity }) {
+export async function reportBlocker({ userId, description, severity, projectName }) {
   severity = severity ?? 'medium';
   if (!VALID_SEVERITIES.includes(severity)) {
     throw new Error(`severity must be one of ${VALID_SEVERITIES.join(', ')}`);
   }
+  const project = await getOrCreateProject({ name: projectName });
   const result = await query(
-    `INSERT INTO blockers (user_id, description, severity)
-     VALUES ($1, $2, $3)
+    `INSERT INTO blockers (user_id, description, severity, project_id)
+     VALUES ($1, $2, $3, $4)
      RETURNING id, reported_at`,
-    [userId, description, severity]
+    [userId, description, severity, project?.id ?? null]
   );
   const blocker = result.rows[0];
 
@@ -71,10 +73,28 @@ export async function resolveBlocker({ blockerId }) {
   return result.rows[0];
 }
 
-export async function listOpenBlockers({ userId = null }) {
-  const result = userId
-    ? await query(`SELECT * FROM blockers WHERE status = 'open' AND user_id = $1 ORDER BY reported_at DESC`, [userId])
-    : await query(`SELECT * FROM blockers WHERE status = 'open' ORDER BY reported_at DESC`);
+/**
+ * @param {{ userId?: number|null, projectName?: string|null }} args
+ * Scoped by project when given, same reasoning as listOpenIncidents.
+ */
+export async function listOpenBlockers({ userId = null, projectName = null }) {
+  const conditions = [`status = 'open'`];
+  const params = [];
+  if (userId) {
+    params.push(userId);
+    conditions.push(`user_id = $${params.length}`);
+  }
+  if (projectName) {
+    params.push(projectName);
+    conditions.push(`project_id = (SELECT id FROM projects WHERE name = $${params.length})`);
+  }
+  const result = await query(
+    `SELECT b.*, p.name AS project_name FROM blockers b
+     LEFT JOIN projects p ON p.id = b.project_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY reported_at DESC`,
+    params
+  );
   return result.rows;
 }
 

@@ -1,6 +1,7 @@
 import { query } from '../db/pool.js';
 import { evaluateEscalation } from './escalationRuleTool.js';
 import { createJiraIssue } from '../services/jira/jiraClient.js';
+import { getOrCreateProject } from './projectTool.js';
 
 const VALID_SEVERITIES = ['P1', 'P2', 'P3', 'P4'];
 
@@ -8,15 +9,16 @@ const VALID_SEVERITIES = ['P1', 'P2', 'P3', 'P4'];
  * Records an incident report and checks whether it should trigger escalation.
  * Mirrors the "HealthRecords" core-urgent-entity tool in GlucoWhats.
  */
-export async function reportIncident({ userId, title, description, severity, affectedSystem }) {
+export async function reportIncident({ userId, title, description, severity, affectedSystem, projectName }) {
   if (!VALID_SEVERITIES.includes(severity)) {
     throw new Error(`severity must be one of ${VALID_SEVERITIES.join(', ')}`);
   }
+  const project = await getOrCreateProject({ name: projectName });
   const result = await query(
-    `INSERT INTO incidents (user_id, title, description, severity, affected_system)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO incidents (user_id, title, description, severity, affected_system, project_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id, reported_at`,
-    [userId, title, description, severity, affectedSystem]
+    [userId, title, description, severity, affectedSystem, project?.id ?? null]
   );
   const incident = result.rows[0];
 
@@ -78,9 +80,30 @@ export async function resolveIncident({ incidentId }) {
   return result.rows[0];
 }
 
-export async function listOpenIncidents({ userId = null }) {
-  const result = userId
-    ? await query(`SELECT * FROM incidents WHERE status != 'resolved' AND user_id = $1 ORDER BY reported_at DESC`, [userId])
-    : await query(`SELECT * FROM incidents WHERE status != 'resolved' ORDER BY reported_at DESC`);
+/**
+ * @param {{ userId?: number|null, projectName?: string|null }} args
+ * Scoped by project when a projectName is given (and matches a known
+ * project), on top of the existing per-user scoping - two different
+ * users (or the same user) reporting similar-sounding incidents for
+ * DIFFERENT projects should never be treated as the same open incident.
+ */
+export async function listOpenIncidents({ userId = null, projectName = null }) {
+  const conditions = [`status != 'resolved'`];
+  const params = [];
+  if (userId) {
+    params.push(userId);
+    conditions.push(`user_id = $${params.length}`);
+  }
+  if (projectName) {
+    params.push(projectName);
+    conditions.push(`project_id = (SELECT id FROM projects WHERE name = $${params.length})`);
+  }
+  const result = await query(
+    `SELECT i.*, p.name AS project_name FROM incidents i
+     LEFT JOIN projects p ON p.id = i.project_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY reported_at DESC`,
+    params
+  );
   return result.rows;
 }
